@@ -149,7 +149,7 @@ void LockscreenCalendarActivity::loop() {
     // Heap-allocate sync buffer (~3.5KB) only for the duration of the sync
     syncResultData = static_cast<calendar::CalendarData*>(malloc(sizeof(calendar::CalendarData)));
     if (!syncResultData) {
-      LOG_ERR("CAL", "malloc failed for sync buffer: %u bytes", sizeof(calendar::CalendarData));
+      LOG_ERR("CAL", "malloc failed for sync buffer: %zu bytes", sizeof(calendar::CalendarData));
       return;
     }
     {

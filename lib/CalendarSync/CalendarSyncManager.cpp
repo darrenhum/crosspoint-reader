@@ -211,7 +211,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   constexpr size_t tempEventsSize = MAX_EVENTS * sizeof(CalendarEvent);
   auto* tempEvents = static_cast<CalendarEvent*>(malloc(tempEventsSize));
   if (!tempEvents) {
-    LOG_ERR("CAL", "malloc failed for tempEvents: %u bytes", tempEventsSize);
+    LOG_ERR("CAL", "malloc failed for tempEvents: %zu bytes", tempEventsSize);
     data.consecutiveFailures++;
     CalendarStore::save(data);
     disconnectWifi();
