@@ -6,25 +6,25 @@
 namespace calendar {
 
 /// Maximum number of .ics feed URLs supported
-inline constexpr uint8_t MAX_ICS_FEEDS = 3;
+constexpr uint8_t MAX_ICS_FEEDS = 3;
 
 /// Maximum number of events stored across all feeds for the current display window
-inline constexpr uint8_t MAX_EVENTS = 64;
+constexpr uint8_t MAX_EVENTS = 64;
 
 /// Maximum length for an event summary (null-terminated)
-inline constexpr uint8_t MAX_SUMMARY_LEN = 48;
+constexpr uint8_t MAX_SUMMARY_LEN = 48;
 
 /// Maximum length for an ICS URL (null-terminated)
-inline constexpr uint16_t MAX_ICS_URL_LEN = 256;
+constexpr uint16_t MAX_ICS_URL_LEN = 256;
 
 /// Maximum length for an ETag header value (null-terminated)
-inline constexpr uint8_t MAX_ETAG_LEN = 64;
+constexpr uint8_t MAX_ETAG_LEN = 64;
 
 /// Display window: events from today minus this many days
-inline constexpr uint8_t PAST_DAYS = 0;
+constexpr uint8_t PAST_DAYS = 0;
 
 /// Display window: events up to this many days in the future
-inline constexpr uint8_t FUTURE_DAYS = 35;
+constexpr uint8_t FUTURE_DAYS = 35;
 
 /// Compact event representation for display
 struct CalendarEvent {
@@ -55,7 +55,7 @@ struct CalendarData {
 };
 
 /// Unix epoch offset for 2000-01-01 (946684800 seconds)
-inline constexpr uint32_t EPOCH_2000_OFFSET = 946684800;
+constexpr uint32_t EPOCH_2000_OFFSET = 946684800;
 
 /// Count leap years from 2000 up to (but not including) the given year.
 inline int leapYearsBefore(int year) {

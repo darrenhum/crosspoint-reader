@@ -7,12 +7,18 @@
 
 #include <cstdio>
 #include <ctime>
+#include <utility>
 
 #include "CrossPointSettings.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
 extern HalPowerManager powerManager;
+
+/// Stack size for the CalSync FreeRTOS task (bytes).
+/// IcsParser ~324B + StreamContext ~72B + HTTP/TLS frames need margin.
+/// tempEvents are heap-allocated in sync() to avoid stack pressure.
+static constexpr uint32_t SYNC_TASK_STACK_SIZE = 8192;
 
 void LockscreenCalendarActivity::onEnter() {
   Activity::onEnter();
@@ -61,7 +67,7 @@ void LockscreenCalendarActivity::initToday() {
 void LockscreenCalendarActivity::loop() {
   // Check if sync task completed - consume result on main task (thread-safe handoff)
   if (syncComplete) {
-    calendarData = syncResultData;
+    std::swap(calendarData, syncResultData);
     syncComplete = false;
     syncInProgress = false;
     syncTaskHandle = nullptr;
@@ -117,9 +123,7 @@ void LockscreenCalendarActivity::loop() {
     syncResultData = calendarData;  // Copy current data for sync task to update
     requestUpdate();
 
-    // Stack: IcsParser(~324B) + StreamContext(~72B) + locals(~200B) ≈ 600B
-    // tempEvents are heap-allocated in sync(). 8192 provides margin for HTTP/TLS stack frames.
-    xTaskCreate(&syncTaskTrampoline, "CalSync", 8192, this, 1, &syncTaskHandle);
+    xTaskCreate(&syncTaskTrampoline, "CalSync", SYNC_TASK_STACK_SIZE, this, 1, &syncTaskHandle);
   }
 }
 
@@ -285,16 +289,17 @@ void LockscreenCalendarActivity::drawCalendarGrid(int contentX, int contentY, in
   int dim = calendar::daysInMonth(displayYear, displayMonth);
   int gridY = sepY + 4;
 
-  // Precompute event-day flags for this month to avoid O(events) per cell
+  // Precompute event-day flags for this month to avoid O(events) per cell.
+  // Max bit index is (dim-1) ≤ 30 (max 31 days), well within uint64_t range.
   uint16_t monthStartDays = calendar::dateToDays(displayYear, displayMonth, 1);
   uint64_t eventDayBits = 0;  // Bit i set => day (i+1) has an event
   for (uint8_t ei = 0; ei < calendarData.eventCount; ei++) {
     const auto& evt = calendarData.events[ei];
-    // Event spans [startDay, endDay). Intersect with this month's [monthStartDays, monthStartDays+dim).
-    int first = (evt.startDay > monthStartDays) ? static_cast<int>(evt.startDay - monthStartDays) : 0;
-    int last = (evt.endDay > monthStartDays) ? static_cast<int>(evt.endDay - monthStartDays) : 0;
-    if (last > dim) last = dim;
-    for (int d = first; d < last && d < 42; d++) {
+    // Event spans [startDay, endDay). Compute overlap with [monthStartDays, monthStartDays+dim).
+    int startOffset = (evt.startDay > monthStartDays) ? static_cast<int>(evt.startDay - monthStartDays) : 0;
+    int endOffset = (evt.endDay > monthStartDays) ? static_cast<int>(evt.endDay - monthStartDays) : 0;
+    if (endOffset > dim) endOffset = dim;
+    for (int d = startOffset; d < endOffset && d < 42; d++) {
       eventDayBits |= (1ULL << d);
     }
   }

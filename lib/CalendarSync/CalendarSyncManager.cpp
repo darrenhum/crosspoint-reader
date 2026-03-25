@@ -31,12 +31,13 @@ struct StreamContext {
 };
 
 /// Parse an HTTP Date header (e.g. "Thu, 01 Jan 2025 00:00:00 GMT") to epoch seconds.
-/// Returns 0 on failure.
+/// Returns 0 on failure. Uses timegm() since HTTP dates are always in GMT.
 uint32_t parseHttpDate(const char* dateStr) {
   struct tm tm = {};
   // Try RFC 7231 format: "Day, DD Mon YYYY HH:MM:SS GMT"
   if (strptime(dateStr, "%a, %d %b %Y %H:%M:%S", &tm)) {
-    return static_cast<uint32_t>(mktime(&tm));
+    time_t t = timegm(&tm);
+    return (t > 0) ? static_cast<uint32_t>(t) : 0;
   }
   return 0;
 }
@@ -79,7 +80,6 @@ bool connectWifi(unsigned long timeoutMs) {
   if (WiFi.status() == WL_CONNECTED) return true;
 
   WIFI_STORE.loadFromFile();
-
   WiFi.mode(WIFI_STA);
   const auto& lastSsid = WIFI_STORE.getLastConnectedSsid();
   if (lastSsid.empty()) {
@@ -185,9 +185,10 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   uint16_t windowEnd = todayDays + FUTURE_DAYS;
 
   // Heap-allocate temp buffer to avoid stack overflow (3328 bytes is too large for task stack)
-  auto* tempEvents = static_cast<CalendarEvent*>(malloc(MAX_EVENTS * sizeof(CalendarEvent)));
+  constexpr size_t tempEventsSize = MAX_EVENTS * sizeof(CalendarEvent);
+  auto* tempEvents = static_cast<CalendarEvent*>(malloc(tempEventsSize));
   if (!tempEvents) {
-    LOG_ERR("CAL", "malloc failed for tempEvents: %u bytes", MAX_EVENTS * sizeof(CalendarEvent));
+    LOG_ERR("CAL", "malloc failed for tempEvents: %u bytes", tempEventsSize);
     disconnectWifi();
     return SyncResult::FAILED;
   }
@@ -231,7 +232,6 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   }
 
   free(tempEvents);
-  tempEvents = nullptr;
 
   // Update sync metadata
   data.lastSyncEpoch = currentEpoch;
