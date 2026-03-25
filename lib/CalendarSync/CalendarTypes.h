@@ -54,21 +54,29 @@ struct CalendarData {
   CalendarData() : eventCount(0), lastSyncEpoch(0), consecutiveFailures(0) { memset(feedMeta, 0, sizeof(feedMeta)); }
 };
 
-/// Convert a broken-down date (year, month 1-12, day 1-31) to days since 2000-01-01
+/// Unix epoch offset for 2000-01-01 (946684800 seconds)
+static constexpr uint32_t EPOCH_2000_OFFSET = 946684800;
+
+/// Convert a broken-down date (year, month 1-12, day 1-31) to days since 2000-01-01.
+/// Uses a sequential day-counting approach for clarity and correctness on embedded targets.
 inline uint16_t dateToDays(int year, int month, int day) {
-  // Adjust for months Jan/Feb in the previous year for the leap year formula
-  int y = year;
-  int m = month;
-  if (m <= 2) {
-    y--;
-    m += 12;
+  static constexpr int daysBeforeMonth[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+  if (month < 1 || month > 12 || day < 1) return 0;
+
+  int32_t days = 0;
+  // Count complete years from 2000
+  for (int y = 2000; y < year; y++) {
+    bool leap = (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0));
+    days += leap ? 366 : 365;
   }
-  // Days from 2000-01-01 using a simplified Julian day calculation
-  int32_t days = 365L * (y - 2000) + (y - 2000 + 3) / 4 - (y - 2000 + 99) / 100 + (y - 2000 + 399) / 400;
-  days += (153 * (m - 3) + 2) / 5 + day - 1;
-  // Adjust for the offset: 2000-01-01 is day 0
-  // March 1, 2000 offset
-  days += 59;  // Jan(31) + Feb(29 in 2000) = 60, minus 1 for zero-based = 59
+  // Add days for complete months in this year
+  days += daysBeforeMonth[month - 1];
+  // Add leap day if past February in a leap year
+  bool leapYear = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+  if (month > 2 && leapYear) days++;
+  // Add days in current month
+  days += day - 1;
+
   return static_cast<uint16_t>(days > 0 ? days : 0);
 }
 

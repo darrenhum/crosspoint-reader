@@ -29,6 +29,7 @@
 
 #include <CalendarStore.h>
 #include <CalendarSyncManager.h>
+#include <CalendarTypes.h>
 
 HalDisplay display;
 HalGPIO gpio;
@@ -204,7 +205,7 @@ void enterDeepSleep() {
     uint32_t interval = calendar::CalendarSyncManager::getNextSyncInterval(batteryPct, calData.consecutiveFailures);
     bool shouldSync = (calData.lastSyncEpoch == 0) || (currentEpoch > 0 && currentEpoch - calData.lastSyncEpoch >= interval);
 
-    if (shouldSync && batteryPct >= 10 && currentEpoch > 946684800) {
+    if (shouldSync && batteryPct >= 10 && currentEpoch > calendar::EPOCH_2000_OFFSET) {
       LOG_DBG("CAL", "Dark boot: attempting calendar sync before sleep");
       calendar::CalendarSyncManager::sync(calData, batteryPct, currentEpoch);
     }

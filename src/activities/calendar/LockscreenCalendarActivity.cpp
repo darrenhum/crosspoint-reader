@@ -195,10 +195,13 @@ void LockscreenCalendarActivity::render(RenderLock&&) {
 
   // --- Header: Month Year ---
   char headerBuf[64];
-  static constexpr const char* MONTH_NAMES[] = {"January",   "February", "March",    "April",
-                                                 "May",       "June",     "July",     "August",
-                                                 "September", "October",  "November", "December"};
-  const char* monthName = (displayMonth >= 1 && displayMonth <= 12) ? MONTH_NAMES[displayMonth - 1] : "?";
+  static constexpr StrId MONTH_STR_IDS[] = {
+      StrId::STR_MONTH_JAN, StrId::STR_MONTH_FEB, StrId::STR_MONTH_MAR, StrId::STR_MONTH_APR,
+      StrId::STR_MONTH_MAY, StrId::STR_MONTH_JUN, StrId::STR_MONTH_JUL, StrId::STR_MONTH_AUG,
+      StrId::STR_MONTH_SEP, StrId::STR_MONTH_OCT, StrId::STR_MONTH_NOV, StrId::STR_MONTH_DEC,
+  };
+  const char* monthName =
+      (displayMonth >= 1 && displayMonth <= 12) ? I18N.get(MONTH_STR_IDS[displayMonth - 1]) : "?";
   snprintf(headerBuf, sizeof(headerBuf), "%s %d", monthName, displayYear);
 
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, headerBuf);
@@ -238,17 +241,25 @@ void LockscreenCalendarActivity::drawCalendarGrid(int contentX, int contentY, in
   int cellWidth = contentWidth / cols;
   int rowHeight = renderer.getLineHeight(UI_10_FONT_ID) + 6;
 
-  // Day of week headers
+  // Day of week headers (internationalized)
   uint8_t weekStart = SETTINGS.calendarWeekStart;
-  static constexpr const char* DAY_HEADERS_SUN[] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
-  static constexpr const char* DAY_HEADERS_MON[] = {"Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"};
-  const char* const* dayHeaders = (weekStart == CrossPointSettings::WEEK_MONDAY) ? DAY_HEADERS_MON : DAY_HEADERS_SUN;
+  // Sunday-start order: Su Mo Tu We Th Fr Sa
+  static constexpr StrId DAY_STR_IDS_SUN[] = {StrId::STR_DAY_SU, StrId::STR_DAY_MO, StrId::STR_DAY_TU,
+                                               StrId::STR_DAY_WE, StrId::STR_DAY_TH, StrId::STR_DAY_FR,
+                                               StrId::STR_DAY_SA};
+  // Monday-start order: Mo Tu We Th Fr Sa Su
+  static constexpr StrId DAY_STR_IDS_MON[] = {StrId::STR_DAY_MO, StrId::STR_DAY_TU, StrId::STR_DAY_WE,
+                                               StrId::STR_DAY_TH, StrId::STR_DAY_FR, StrId::STR_DAY_SA,
+                                               StrId::STR_DAY_SU};
+  const StrId* dayStrIds =
+      (weekStart == CrossPointSettings::WEEK_MONDAY) ? DAY_STR_IDS_MON : DAY_STR_IDS_SUN;
 
   int headerY = contentY;
   for (int col = 0; col < cols; col++) {
     int x = contentX + col * cellWidth + cellWidth / 2;
-    int textW = renderer.getTextWidth(UI_10_FONT_ID, dayHeaders[col]);
-    renderer.drawText(UI_10_FONT_ID, x - textW / 2, headerY, dayHeaders[col], true, EpdFontFamily::BOLD);
+    const char* dayLabel = I18N.get(dayStrIds[col]);
+    int textW = renderer.getTextWidth(UI_10_FONT_ID, dayLabel);
+    renderer.drawText(UI_10_FONT_ID, x - textW / 2, headerY, dayLabel, true, EpdFontFamily::BOLD);
   }
 
   // Separator line below day headers
@@ -337,8 +348,9 @@ void LockscreenCalendarActivity::drawEventList(int listX, int listY, int listWid
   for (int i = 0; i < eventCount && y + lineHeight < listY + listHeight; i++) {
     const auto* evt = dayEvents[i];
     // Bullet point + truncated summary
+    static constexpr char BULLET_UTF8[] = "\xE2\x80\xA2";
     char eventLine[64];
-    snprintf(eventLine, sizeof(eventLine), "\xE2\x80\xA2 %s", evt->summary);  // UTF-8 bullet
+    snprintf(eventLine, sizeof(eventLine), "%s %s", BULLET_UTF8, evt->summary);
 
     // Truncate to fit width
     std::string truncated = renderer.truncatedText(UI_10_FONT_ID, eventLine, listWidth);

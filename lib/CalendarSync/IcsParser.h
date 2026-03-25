@@ -70,6 +70,7 @@ class IcsParser {
   static constexpr size_t LINE_BUF_SIZE = 256;
   char lineBuf[LINE_BUF_SIZE];
   size_t lineLen = 0;
+  bool pendingNewline = false;  ///< True after seeing \n, before checking for continuation
 
   // Current event being built
   uint16_t currentStart = 0;

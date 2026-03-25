@@ -15,6 +15,7 @@ void IcsParser::begin(uint16_t windowStart, uint16_t windowEnd, CalendarEvent* o
   state = State::SCANNING;
   currentProperty = Property::NONE;
   lineLen = 0;
+  pendingNewline = false;
   hasStart = false;
   hasEnd = false;
   currentSummary[0] = '\0';
@@ -30,22 +31,25 @@ void IcsParser::feed(const uint8_t* data, size_t len) {
     if (c == '\r') continue;
 
     if (c == '\n') {
-      // ICS continuation lines start with a space or tab
-      // We peek ahead but can't here; handle in next feed
-      // For simplicity, process the line now
+      // ICS continuation lines start with a space or tab on the next line.
+      // We set a flag so that when we process the next character, we can
+      // determine if it's a continuation or a new line.
       lineBuf[lineLen] = '\0';
-      processLine();
-      lineLen = 0;
+      pendingNewline = true;
       continue;
     }
 
-    // Handle ICS line folding: if lineLen is 0 and c is space/tab, it's a continuation
-    if (lineLen == 0 && (c == ' ' || c == '\t')) {
-      // Continuation of previous line - restore lineLen to append
-      // We already processed the previous line, so for simplicity in streaming,
-      // we only handle SUMMARY continuations by re-entering value mode.
-      // Most DTSTART/DTEND values fit in one line.
-      continue;
+    // Handle ICS line folding: if we just saw a newline and c is space/tab,
+    // it's a continuation of the previous logical line.
+    if (pendingNewline) {
+      pendingNewline = false;
+      if (c == ' ' || c == '\t') {
+        // Continuation line - append to current buffer (skip the folding whitespace)
+        continue;
+      }
+      // Not a continuation - process the completed line
+      processLine();
+      lineLen = 0;
     }
 
     if (lineLen < LINE_BUF_SIZE - 1) {
@@ -57,10 +61,11 @@ void IcsParser::feed(const uint8_t* data, size_t len) {
 
 uint8_t IcsParser::end() {
   // Process any remaining data in the line buffer
-  if (lineLen > 0) {
+  if (lineLen > 0 || pendingNewline) {
     lineBuf[lineLen] = '\0';
     processLine();
     lineLen = 0;
+    pendingNewline = false;
   }
   return eventCount;
 }

@@ -157,8 +157,6 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
 
   // Calculate display window
   // Convert currentEpoch to days since 2000-01-01
-  // Unix epoch (1970) to 2000 epoch offset: 946684800 seconds
-  constexpr uint32_t EPOCH_2000_OFFSET = 946684800;
   uint16_t todayDays = 0;
   if (currentEpoch > EPOCH_2000_OFFSET) {
     todayDays = static_cast<uint16_t>((currentEpoch - EPOCH_2000_OFFSET) / 86400);
@@ -188,17 +186,17 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
     }
     if (!url || url[0] == '\0') continue;
 
-    uint8_t remaining = MAX_EVENTS - tempCount;
-    if (remaining == 0) break;
+    uint8_t maxForFeed = MAX_EVENTS - tempCount;
+    if (maxForFeed == 0) break;
 
-    bool modified = fetchAndParseFeed(url, data.feedMeta[i], tempEvents + tempCount, remaining, remaining, windowStart,
+    uint8_t addedCount = maxForFeed;
+    bool modified = fetchAndParseFeed(url, data.feedMeta[i], tempEvents + tempCount, addedCount, maxForFeed, windowStart,
                                       windowEnd);
     if (modified) {
       anyModified = true;
-      tempCount += remaining;
-    } else if (remaining == 0) {
-      // 304 Not Modified - keep existing events from this feed
-      // (they're already in data.events from previous sync)
+      tempCount += addedCount;
+    } else if (addedCount == 0) {
+      // Feed returned 304 Not Modified or failed - no new events
     } else {
       anyFailed = true;
     }
