@@ -44,6 +44,7 @@ uint32_t parseHttpDate(const char* dateStr) {
   int day = 0, year = 0, hour = 0, min = 0, sec = 0;
   char monStr[4] = {};
   if (sscanf(p, "%d %3s %d %d:%d:%d", &day, monStr, &year, &hour, &min, &sec) != 6) return 0;
+  if (day < 1 || day > 31 || hour < 0 || hour > 23 || min < 0 || min > 59 || sec < 0 || sec > 59) return 0;
 
   static const char* months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -205,7 +206,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   uint16_t windowStart = (todayDays > PAST_DAYS) ? todayDays - PAST_DAYS : 0;
   uint16_t windowEnd = todayDays + FUTURE_DAYS;
 
-  // Heap-allocate temp buffer to avoid stack overflow (3328 bytes is too large for task stack)
+  // Heap-allocate temp buffer: 64 events × 52 bytes = 3328 bytes, too large for task stack.
   constexpr size_t tempEventsSize = MAX_EVENTS * sizeof(CalendarEvent);
   auto* tempEvents = static_cast<CalendarEvent*>(malloc(tempEventsSize));
   if (!tempEvents) {

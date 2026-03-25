@@ -311,6 +311,7 @@ void LockscreenCalendarActivity::drawCalendarGrid(int contentX, int contentY, in
 
   // Precompute event-day flags for this month to avoid O(events) per cell.
   // Max bit index is (dim-1) ≤ 30 (max 31 days), well within uint64_t range.
+  // The inner loop is bounded by dim (max 31) to ensure no out-of-range bit shifts.
   uint16_t monthStartDays = calendar::dateToDays(displayYear, displayMonth, 1);
   uint64_t eventDayBits = 0;  // Bit i set => day (i+1) has an event
   for (uint8_t ei = 0; ei < calendarData.eventCount; ei++) {
@@ -319,7 +320,7 @@ void LockscreenCalendarActivity::drawCalendarGrid(int contentX, int contentY, in
     int startOffset = (evt.startDay > monthStartDays) ? static_cast<int>(evt.startDay - monthStartDays) : 0;
     int endOffset = (evt.endDay > monthStartDays) ? static_cast<int>(evt.endDay - monthStartDays) : 0;
     if (endOffset > dim) endOffset = dim;
-    for (int d = startOffset; d < endOffset && d < 42; d++) {
+    for (int d = startOffset; d < endOffset; d++) {
       eventDayBits |= (1ULL << d);
     }
   }

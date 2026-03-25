@@ -147,6 +147,11 @@ uint16_t IcsParser::parseDtValue(const char* value, size_t len) {
   // We only need the date portion (first 8 chars)
   if (len < 8) return 0;
 
+  // Validate that first 8 chars are all digits
+  for (int i = 0; i < 8; i++) {
+    if (value[i] < '0' || value[i] > '9') return 0;
+  }
+
   // Parse YYYYMMDD
   char yearBuf[5] = {0};
   char monthBuf[3] = {0};
