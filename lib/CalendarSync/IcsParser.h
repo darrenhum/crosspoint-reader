@@ -66,8 +66,10 @@ class IcsParser {
   State state = State::SCANNING;
   Property currentProperty = Property::NONE;
 
-  // Line buffer for accumulating key:value data
-  static constexpr size_t LINE_BUF_SIZE = 256;
+  // Line buffer for accumulating key:value data.
+  // ICS lines fold at 75 octets (RFC 5545 §3.1); 128 accommodates any unfolded
+  // property value we care about (DTSTART/DTEND/SUMMARY) with headroom.
+  static constexpr size_t LINE_BUF_SIZE = 128;
   char lineBuf[LINE_BUF_SIZE];
   size_t lineLen = 0;
   bool pendingNewline = false;  ///< True after seeing \n, before checking for continuation

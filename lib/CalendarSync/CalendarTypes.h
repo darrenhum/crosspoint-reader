@@ -58,7 +58,8 @@ struct CalendarData {
 constexpr uint32_t EPOCH_2000_OFFSET = 946684800;
 
 /// Shared days-per-month lookup (non-leap year). Used by multiple date functions.
-static constexpr int DAYS_IN_MONTH[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+/// `inline constexpr` ensures a single definition across translation units (C++17).
+inline constexpr int DAYS_IN_MONTH[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
 /// Check if a year is a leap year
 inline bool isLeapYear(int year) {

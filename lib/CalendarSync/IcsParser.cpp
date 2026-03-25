@@ -134,8 +134,11 @@ void IcsParser::commitEvent() {
   CalendarEvent& evt = events[eventCount];
   evt.startDay = currentStart;
   evt.endDay = currentEnd;
-  memcpy(evt.summary, currentSummary, MAX_SUMMARY_LEN);
-  evt.summary[MAX_SUMMARY_LEN - 1] = '\0';
+  // Copy only the actual summary content (+ null terminator) instead of the full buffer
+  size_t summaryLen = strlen(currentSummary);
+  if (summaryLen >= MAX_SUMMARY_LEN) summaryLen = MAX_SUMMARY_LEN - 1;
+  memcpy(evt.summary, currentSummary, summaryLen);
+  evt.summary[summaryLen] = '\0';
   eventCount++;
 }
 

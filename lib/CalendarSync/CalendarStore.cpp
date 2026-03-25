@@ -107,7 +107,8 @@ bool CalendarStore::save(const CalendarData& data) {
   file.close();
 
   if (!ok) {
-    LOG_ERR("CAL", "Failed to write calendar data to file");
+    LOG_ERR("CAL", "Failed to write calendar data to file, removing corrupt file");
+    Storage.remove(FILE_PATH);
     return false;
   }
 
