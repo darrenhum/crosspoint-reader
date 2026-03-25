@@ -27,6 +27,9 @@
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
 
+#include <CalendarStore.h>
+#include <CalendarSyncManager.h>
+
 HalDisplay display;
 HalGPIO gpio;
 MappedInputManager mappedInputManager(gpio);
@@ -185,6 +188,27 @@ void enterDeepSleep() {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
   APP_STATE.saveToFile();
+
+  // Dark boot calendar sync: attempt background sync without UI
+  // This runs before rendering the sleep screen to minimize wake time
+  {
+    calendar::CalendarData calData;
+    calendar::CalendarStore::load(calData);
+
+    time_t now;
+    time(&now);
+    uint32_t currentEpoch = static_cast<uint32_t>(now);
+    uint8_t batteryPct = powerManager.getBatteryPercentage();
+
+    // Only sync if schedule says it's time (adaptive interval check)
+    uint32_t interval = calendar::CalendarSyncManager::getNextSyncInterval(batteryPct, calData.consecutiveFailures);
+    bool shouldSync = (calData.lastSyncEpoch == 0) || (currentEpoch > 0 && currentEpoch - calData.lastSyncEpoch >= interval);
+
+    if (shouldSync && batteryPct >= 10 && currentEpoch > 946684800) {
+      LOG_DBG("CAL", "Dark boot: attempting calendar sync before sleep");
+      calendar::CalendarSyncManager::sync(calData, batteryPct, currentEpoch);
+    }
+  }
 
   activityManager.goToSleep();
 

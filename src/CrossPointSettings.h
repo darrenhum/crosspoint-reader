@@ -200,6 +200,15 @@ class CrossPointSettings {
   // Image rendering mode in EPUB reader
   uint8_t imageRendering = IMAGES_DISPLAY;
 
+  // Calendar settings
+  // Week start day: 0 = Sunday, 1 = Monday
+  enum WEEK_START_DAY { WEEK_SUNDAY = 0, WEEK_MONDAY = 1, WEEK_START_DAY_COUNT };
+  uint8_t calendarWeekStart = WEEK_SUNDAY;
+  // Calendar ICS feed URLs (up to 3)
+  char calendarIcsUrl1[256] = "";
+  char calendarIcsUrl2[256] = "";
+  char calendarIcsUrl3[256] = "";
+
   ~CrossPointSettings() = default;
 
   // Get singleton instance

@@ -136,6 +136,16 @@ inline const std::vector<SettingInfo>& getSettingsList() {
                         StrId::STR_CUSTOMISE_STATUS_BAR),
       SettingInfo::Toggle(StrId::STR_BATTERY, &CrossPointSettings::statusBarBattery, "statusBarBattery",
                           StrId::STR_CUSTOMISE_STATUS_BAR),
+
+      // --- Calendar ---
+      SettingInfo::Enum(StrId::STR_WEEK_START, &CrossPointSettings::calendarWeekStart,
+                        {StrId::STR_SUNDAY, StrId::STR_MONDAY}, "calendarWeekStart", StrId::STR_CAT_CALENDAR),
+      SettingInfo::String(StrId::STR_ICS_URL_1, SETTINGS.calendarIcsUrl1, sizeof(SETTINGS.calendarIcsUrl1),
+                          "calendarIcsUrl1", StrId::STR_CAT_CALENDAR),
+      SettingInfo::String(StrId::STR_ICS_URL_2, SETTINGS.calendarIcsUrl2, sizeof(SETTINGS.calendarIcsUrl2),
+                          "calendarIcsUrl2", StrId::STR_CAT_CALENDAR),
+      SettingInfo::String(StrId::STR_ICS_URL_3, SETTINGS.calendarIcsUrl3, sizeof(SETTINGS.calendarIcsUrl3),
+                          "calendarIcsUrl3", StrId::STR_CAT_CALENDAR),
   };
   return list;
 }
