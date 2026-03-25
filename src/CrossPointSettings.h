@@ -204,7 +204,7 @@ class CrossPointSettings {
   // Week start day: 0 = Sunday, 1 = Monday
   enum WEEK_START_DAY { WEEK_SUNDAY = 0, WEEK_MONDAY = 1, WEEK_START_DAY_COUNT };
   uint8_t calendarWeekStart = WEEK_SUNDAY;
-  // Calendar ICS feed URLs (up to 3)
+  // Calendar ICS feed URLs (up to 3). Size must match calendar::MAX_ICS_URL_LEN.
   char calendarIcsUrl1[256] = "";
   char calendarIcsUrl2[256] = "";
   char calendarIcsUrl3[256] = "";

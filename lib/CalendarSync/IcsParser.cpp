@@ -1,6 +1,5 @@
 #include "IcsParser.h"
 
-#include <cstdlib>
 #include <cstring>
 
 namespace calendar {
@@ -152,18 +151,10 @@ uint16_t IcsParser::parseDtValue(const char* value, size_t len) {
     if (value[i] < '0' || value[i] > '9') return 0;
   }
 
-  // Parse YYYYMMDD
-  char yearBuf[5] = {0};
-  char monthBuf[3] = {0};
-  char dayBuf[3] = {0};
-
-  memcpy(yearBuf, value, 4);
-  memcpy(monthBuf, value + 4, 2);
-  memcpy(dayBuf, value + 6, 2);
-
-  int year = atoi(yearBuf);
-  int month = atoi(monthBuf);
-  int day = atoi(dayBuf);
+  // Parse YYYYMMDD directly from digits (avoids atoi + temp buffers)
+  int year = (value[0] - '0') * 1000 + (value[1] - '0') * 100 + (value[2] - '0') * 10 + (value[3] - '0');
+  int month = (value[4] - '0') * 10 + (value[5] - '0');
+  int day = (value[6] - '0') * 10 + (value[7] - '0');
 
   if (year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) {
     return 0;

@@ -81,9 +81,13 @@ void LockscreenCalendarActivity::loop() {
         syncResultData = nullptr;
       }
     }
+    // Delete the suspended sync task (it suspended itself after setting syncComplete)
+    if (syncTaskHandle) {
+      vTaskDelete(syncTaskHandle);
+      syncTaskHandle = nullptr;
+    }
     syncComplete = false;
     syncInProgress = false;
-    syncTaskHandle = nullptr;
     requestUpdate();
   }
 
@@ -150,9 +154,12 @@ void LockscreenCalendarActivity::loop() {
 void LockscreenCalendarActivity::syncTaskTrampoline(void* param) {
   auto* self = static_cast<LockscreenCalendarActivity*>(param);
   self->syncTask();
-  // Signal main task that sync is complete (main task will read syncResultData under lock)
+  // Signal main task that sync is complete.
+  // Do NOT self-delete here: the main task owns syncTaskHandle and will clean up
+  // in loop() or onExit(). Self-deleting would leave syncTaskHandle dangling,
+  // causing a double-free if onExit() runs before loop() processes the flag.
   self->syncComplete = true;
-  vTaskDelete(nullptr);
+  vTaskSuspend(nullptr);  // Suspend instead of delete; main task will vTaskDelete
 }
 
 void LockscreenCalendarActivity::syncTask() {
