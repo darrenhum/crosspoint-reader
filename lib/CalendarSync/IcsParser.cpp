@@ -93,16 +93,14 @@ void IcsParser::processLine() {
         // Find the colon after DTSTART (may have params like ;VALUE=DATE:)
         const char* colon = strchr(lineBuf, ':');
         if (colon && colon + 1 < lineBuf + lineLen) {
-          size_t offset = static_cast<size_t>(colon + 1 - lineBuf);
-          size_t valLen = lineLen - offset;
+          size_t valLen = lineLen - static_cast<size_t>(colon + 1 - lineBuf);
           currentStart = parseDtValue(colon + 1, valLen);
           hasStart = true;
         }
       } else if (startsWith(lineBuf, lineLen, "DTEND")) {
         const char* colon = strchr(lineBuf, ':');
         if (colon && colon + 1 < lineBuf + lineLen) {
-          size_t offset = static_cast<size_t>(colon + 1 - lineBuf);
-          size_t valLen = lineLen - offset;
+          size_t valLen = lineLen - static_cast<size_t>(colon + 1 - lineBuf);
           currentEnd = parseDtValue(colon + 1, valLen);
           hasEnd = true;
         }
@@ -110,8 +108,7 @@ void IcsParser::processLine() {
         const char* colon = strchr(lineBuf, ':');
         if (colon && colon + 1 < lineBuf + lineLen) {
           const char* val = colon + 1;
-          size_t offset = static_cast<size_t>(val - lineBuf);
-          size_t valLen = lineLen - offset;
+          size_t valLen = lineLen - static_cast<size_t>(val - lineBuf);
           if (valLen >= MAX_SUMMARY_LEN) valLen = MAX_SUMMARY_LEN - 1;
           memcpy(currentSummary, val, valLen);
           currentSummary[valLen] = '\0';

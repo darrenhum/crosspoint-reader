@@ -46,14 +46,16 @@ class LockscreenCalendarActivity final : public Activity {
   int todayDay = 0;
   uint16_t todayDays = 0;  // Days since 2000-01-01
 
-  // Calendar data from persistent store
+  // Calendar data from persistent store (read by render task under RenderLock,
+  // written by main task only while holding RenderLock)
   calendar::CalendarData calendarData;
 
-  // Sync state - runs on a separate FreeRTOS task for non-blocking UI
+  // Sync state - runs on a separate FreeRTOS task for non-blocking UI.
+  // syncResultData is heap-allocated only during sync to avoid wasting ~3.5KB permanently.
   volatile bool syncInProgress = false;
   volatile bool syncComplete = false;
   TaskHandle_t syncTaskHandle = nullptr;
-  calendar::CalendarData syncResultData;  ///< Written only by sync task, read by main task after syncComplete
+  calendar::CalendarData* syncResultData = nullptr;  ///< Heap-allocated, owned during sync only
   static void syncTaskTrampoline(void* param);
   void syncTask();
 

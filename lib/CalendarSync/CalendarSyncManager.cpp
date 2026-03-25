@@ -31,15 +31,36 @@ struct StreamContext {
 };
 
 /// Parse an HTTP Date header (e.g. "Thu, 01 Jan 2025 00:00:00 GMT") to epoch seconds.
-/// Returns 0 on failure. Uses timegm() since HTTP dates are always in GMT.
+/// Returns 0 on failure. Manual parse to avoid strptime() portability issues on ESP-IDF.
 uint32_t parseHttpDate(const char* dateStr) {
-  struct tm tm = {};
-  // Try RFC 7231 format: "Day, DD Mon YYYY HH:MM:SS GMT"
-  if (strptime(dateStr, "%a, %d %b %Y %H:%M:%S", &tm)) {
-    time_t t = timegm(&tm);
-    return (t > 0) ? static_cast<uint32_t>(t) : 0;
+  if (!dateStr) return 0;
+  // RFC 7231 format: "Day, DD Mon YYYY HH:MM:SS GMT"
+  // Find the date portion after "Day, "
+  const char* p = strchr(dateStr, ',');
+  if (!p) return 0;
+  p++;  // skip comma
+  while (*p == ' ') p++;  // skip spaces
+
+  int day = 0, year = 0, hour = 0, min = 0, sec = 0;
+  char monStr[4] = {};
+  if (sscanf(p, "%d %3s %d %d:%d:%d", &day, monStr, &year, &hour, &min, &sec) != 6) return 0;
+
+  static const char* months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  int month = -1;
+  for (int i = 0; i < 12; i++) {
+    if (strcmp(monStr, months[i]) == 0) {
+      month = i;
+      break;
+    }
   }
-  return 0;
+  if (month < 0 || year < 2000 || year > 2099) return 0;
+
+  // Convert to days since 2000-01-01 then to epoch
+  uint16_t days = dateToDays(year, month + 1, day);
+  uint32_t epochSec = static_cast<uint32_t>(days) * 86400 + EPOCH_2000_OFFSET;
+  epochSec += static_cast<uint32_t>(hour) * 3600 + static_cast<uint32_t>(min) * 60 + static_cast<uint32_t>(sec);
+  return epochSec;
 }
 
 /// HTTP event handler that streams data directly to the ICS parser
@@ -197,7 +218,10 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   bool anyModified = false;
   bool anyFailed = false;
 
-  // Fetch each configured feed sequentially
+  // Track which feeds returned 304 (NOT_MODIFIED) for possible re-fetch
+  bool feedNeedsRefetch[MAX_ICS_FEEDS] = {};
+
+  // First pass: fetch each configured feed with conditional headers
   for (uint8_t i = 0; i < MAX_ICS_FEEDS; i++) {
     const char* url = getIcsUrl(i);
     if (!url || url[0] == '\0') continue;
@@ -214,7 +238,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
         tempCount += addedCount;
         break;
       case FeedResult::NOT_MODIFIED:
-        // Preserve existing events from this feed in the merge below
+        feedNeedsRefetch[i] = true;
         break;
       case FeedResult::FAILED:
         anyFailed = true;
@@ -222,11 +246,39 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
     }
   }
 
+  // Second pass: if any feed was modified and others returned 304, re-fetch
+  // the 304 feeds without conditional headers to get a consistent snapshot.
+  // Without this, events from 304 feeds would be silently lost when data.events
+  // is replaced with tempEvents.
+  if (anyModified) {
+    for (uint8_t i = 0; i < MAX_ICS_FEEDS; i++) {
+      if (!feedNeedsRefetch[i]) continue;
+      const char* url = getIcsUrl(i);
+      if (!url || url[0] == '\0') continue;
+
+      uint8_t maxForFeed = MAX_EVENTS - tempCount;
+      if (maxForFeed == 0) break;
+
+      // Clear conditional headers to force a full re-fetch
+      FeedSyncMeta tempMeta = {};
+      uint8_t addedCount = 0;
+      FeedResult result = fetchAndParseFeed(url, tempMeta, tempEvents + tempCount, addedCount, maxForFeed,
+                                            windowStart, windowEnd);
+      if (result == FeedResult::UPDATED) {
+        tempCount += addedCount;
+        // Update the meta with new values from re-fetch
+        data.feedMeta[i] = tempMeta;
+      } else if (result == FeedResult::FAILED) {
+        anyFailed = true;
+      }
+    }
+  }
+
   // Power down WiFi as soon as possible
   disconnectWifi();
 
   if (anyModified) {
-    // Replace events with newly fetched data
+    // Replace events with newly fetched data (now includes all feeds)
     data.eventCount = tempCount > MAX_EVENTS ? MAX_EVENTS : tempCount;
     memcpy(data.events, tempEvents, data.eventCount * sizeof(CalendarEvent));
   }

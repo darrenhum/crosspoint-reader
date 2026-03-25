@@ -7,16 +7,16 @@
 
 #include <cstdio>
 #include <ctime>
-#include <utility>
 
 #include "CrossPointSettings.h"
+#include "activities/RenderLock.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
 extern HalPowerManager powerManager;
 
 /// Stack size for the CalSync FreeRTOS task (bytes).
-/// IcsParser ~324B + StreamContext ~72B + HTTP/TLS frames need margin.
+/// IcsParser ~360B + StreamContext ~80B + HTTP config ~200B + call frames.
 /// tempEvents are heap-allocated in sync() to avoid stack pressure.
 static constexpr uint32_t SYNC_TASK_STACK_SIZE = 8192;
 
@@ -39,6 +39,11 @@ void LockscreenCalendarActivity::onExit() {
   if (syncTaskHandle) {
     vTaskDelete(syncTaskHandle);
     syncTaskHandle = nullptr;
+  }
+  // Free heap-allocated sync buffer if sync was in progress
+  if (syncResultData) {
+    free(syncResultData);
+    syncResultData = nullptr;
   }
   syncInProgress = false;
   syncComplete = false;
@@ -65,9 +70,17 @@ void LockscreenCalendarActivity::initToday() {
 }
 
 void LockscreenCalendarActivity::loop() {
-  // Check if sync task completed - consume result on main task (thread-safe handoff)
+  // Check if sync task completed - consume result on main task (thread-safe handoff).
+  // Acquire RenderLock so the render task cannot read calendarData during the swap.
   if (syncComplete) {
-    std::swap(calendarData, syncResultData);
+    {
+      RenderLock lock;
+      if (syncResultData) {
+        calendarData = *syncResultData;
+        free(syncResultData);
+        syncResultData = nullptr;
+      }
+    }
     syncComplete = false;
     syncInProgress = false;
     syncTaskHandle = nullptr;
@@ -117,10 +130,17 @@ void LockscreenCalendarActivity::loop() {
   });
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm) && !syncInProgress) {
-    // Manual sync trigger - run on separate task to avoid blocking UI
+    // Heap-allocate sync buffer (~3.5KB) only for the duration of the sync
+    syncResultData = static_cast<calendar::CalendarData*>(malloc(sizeof(calendar::CalendarData)));
+    if (!syncResultData) {
+      LOG_ERR("CAL", "malloc failed for sync buffer: %u bytes", sizeof(calendar::CalendarData));
+      return;
+    }
+    // Copy current data so sync task has feed metadata for conditional requests
+    *syncResultData = calendarData;
+
     syncInProgress = true;
     syncComplete = false;
-    syncResultData = calendarData;  // Copy current data for sync task to update
     requestUpdate();
 
     xTaskCreate(&syncTaskTrampoline, "CalSync", SYNC_TASK_STACK_SIZE, this, 1, &syncTaskHandle);
@@ -130,7 +150,7 @@ void LockscreenCalendarActivity::loop() {
 void LockscreenCalendarActivity::syncTaskTrampoline(void* param) {
   auto* self = static_cast<LockscreenCalendarActivity*>(param);
   self->syncTask();
-  // Signal main task that sync is complete (main task will read syncResultData)
+  // Signal main task that sync is complete (main task will read syncResultData under lock)
   self->syncComplete = true;
   vTaskDelete(nullptr);
 }
@@ -142,7 +162,7 @@ void LockscreenCalendarActivity::syncTask() {
   time(&now);
   uint32_t currentEpoch = static_cast<uint32_t>(now);
 
-  auto result = calendar::CalendarSyncManager::sync(syncResultData, batteryPct, currentEpoch);
+  auto result = calendar::CalendarSyncManager::sync(*syncResultData, batteryPct, currentEpoch);
 
   switch (result) {
     case calendar::CalendarSyncManager::SyncResult::OK_UPDATED:
