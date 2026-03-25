@@ -332,10 +332,11 @@ void LockscreenCalendarActivity::drawCalendarGrid(int contentX, int contentY, in
   int gridY = sepY + 4;
 
   // Precompute event-day flags for this month to avoid O(events) per cell.
-  // Max bit index is (dim-1) ≤ 30 (max 31 days), well within uint64_t range.
-  // The inner loop is bounded by dim (max 31) to ensure no out-of-range bit shifts.
+  // Max bit index is (dim-1) ≤ 30 (max 31 days), well within uint32_t range.
+  // uint32_t is preferred over uint64_t: ESP32-C3 is 32-bit RISC-V, so 32-bit
+  // shifts are single instructions vs multi-instruction 64-bit shifts.
   uint16_t monthStartDays = calendar::dateToDays(displayYear, displayMonth, 1);
-  uint64_t eventDayBits = 0;  // Bit i set => day (i+1) has an event
+  uint32_t eventDayBits = 0;  // Bit i set => day (i+1) has an event
   for (uint8_t ei = 0; ei < calendarData.eventCount; ei++) {
     const auto& evt = calendarData.events[ei];
     // Event spans [startDay, endDay). Compute overlap with [monthStartDays, monthStartDays+dim).
@@ -343,7 +344,7 @@ void LockscreenCalendarActivity::drawCalendarGrid(int contentX, int contentY, in
     int endOffset = (evt.endDay > monthStartDays) ? static_cast<int>(evt.endDay - monthStartDays) : 0;
     if (endOffset > dim) endOffset = dim;
     for (int d = startOffset; d < endOffset; d++) {
-      eventDayBits |= (1ULL << d);
+      eventDayBits |= (1U << d);
     }
   }
 
@@ -384,7 +385,7 @@ void LockscreenCalendarActivity::drawCalendarGrid(int contentX, int contentY, in
     }
 
     // Event dot indicator below the day number (use precomputed bitset)
-    if (eventDayBits & (1ULL << (day - 1))) {
+    if (eventDayBits & (1U << (day - 1))) {
       int dotX = cellX + cellWidth / 2;
       int dotY = cellY + rowHeight - 4;
       renderer.fillRect(dotX - 1, dotY - 1, 3, 3, !isToday);
