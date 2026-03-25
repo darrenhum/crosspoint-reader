@@ -49,9 +49,11 @@ class LockscreenCalendarActivity final : public Activity {
   // Calendar data from persistent store
   calendar::CalendarData calendarData;
 
-  // Sync state
-  bool syncInProgress = false;
+  // Sync state - runs on a separate FreeRTOS task for non-blocking UI
+  volatile bool syncInProgress = false;
+  volatile bool syncComplete = false;
   TaskHandle_t syncTaskHandle = nullptr;
+  calendar::CalendarData syncResultData;  ///< Written only by sync task, read by main task after syncComplete
   static void syncTaskTrampoline(void* param);
   void syncTask();
 

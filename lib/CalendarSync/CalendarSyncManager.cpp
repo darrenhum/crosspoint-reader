@@ -26,8 +26,20 @@ namespace {
 struct StreamContext {
   IcsParser* parser;
   char etagBuf[MAX_ETAG_LEN];
+  uint32_t lastModifiedEpoch;
   bool gotData;
 };
+
+/// Parse an HTTP Date header (e.g. "Thu, 01 Jan 2025 00:00:00 GMT") to epoch seconds.
+/// Returns 0 on failure.
+uint32_t parseHttpDate(const char* dateStr) {
+  struct tm tm = {};
+  // Try RFC 7231 format: "Day, DD Mon YYYY HH:MM:SS GMT"
+  if (strptime(dateStr, "%a, %d %b %Y %H:%M:%S", &tm)) {
+    return static_cast<uint32_t>(mktime(&tm));
+  }
+  return 0;
+}
 
 /// HTTP event handler that streams data directly to the ICS parser
 esp_err_t icsHttpEventHandler(esp_http_client_event_t* event) {
@@ -36,10 +48,15 @@ esp_err_t icsHttpEventHandler(esp_http_client_event_t* event) {
 
   switch (event->event_id) {
     case HTTP_EVENT_ON_HEADER:
+      if (!event->header_key || !event->header_value) break;
       // Capture ETag header
-      if (strcasecmp(event->header_key, "ETag") == 0 && event->header_value) {
+      if (strcasecmp(event->header_key, "ETag") == 0) {
         strncpy(ctx->etagBuf, event->header_value, MAX_ETAG_LEN - 1);
         ctx->etagBuf[MAX_ETAG_LEN - 1] = '\0';
+      }
+      // Capture Last-Modified header
+      if (strcasecmp(event->header_key, "Last-Modified") == 0) {
+        ctx->lastModifiedEpoch = parseHttpDate(event->header_value);
       }
       break;
 
@@ -58,8 +75,10 @@ esp_err_t icsHttpEventHandler(esp_http_client_event_t* event) {
 }
 
 /// Attempt WiFi connection using stored credentials
-bool connectWifi() {
+bool connectWifi(unsigned long timeoutMs) {
   if (WiFi.status() == WL_CONNECTED) return true;
+
+  WIFI_STORE.loadFromFile();
 
   WiFi.mode(WIFI_STA);
   const auto& lastSsid = WIFI_STORE.getLastConnectedSsid();
@@ -77,7 +96,7 @@ bool connectWifi() {
 
   // Wait for connection with timeout
   unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+  while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
     delay(100);
   }
 
@@ -101,6 +120,19 @@ void disconnectWifi() {
 
 }  // namespace
 
+const char* CalendarSyncManager::getIcsUrl(uint8_t feedIndex) {
+  switch (feedIndex) {
+    case 0:
+      return SETTINGS.calendarIcsUrl1;
+    case 1:
+      return SETTINGS.calendarIcsUrl2;
+    case 2:
+      return SETTINGS.calendarIcsUrl3;
+    default:
+      return nullptr;
+  }
+}
+
 CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, uint8_t batteryPct,
                                                           uint32_t currentEpoch) {
   // Check battery threshold
@@ -112,18 +144,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   // Check if any ICS URLs are configured
   bool hasUrls = false;
   for (uint8_t i = 0; i < MAX_ICS_FEEDS; i++) {
-    const char* url = nullptr;
-    switch (i) {
-      case 0:
-        url = SETTINGS.calendarIcsUrl1;
-        break;
-      case 1:
-        url = SETTINGS.calendarIcsUrl2;
-        break;
-      case 2:
-        url = SETTINGS.calendarIcsUrl3;
-        break;
-    }
+    const char* url = getIcsUrl(i);
     if (url && url[0] != '\0') {
       hasUrls = true;
       break;
@@ -148,7 +169,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   }
 
   // Connect WiFi
-  if (!connectWifi()) {
+  if (!connectWifi(WIFI_CONNECT_TIMEOUT_MS)) {
     data.consecutiveFailures++;
     CalendarStore::save(data);
     disconnectWifi();
@@ -156,7 +177,6 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   }
 
   // Calculate display window
-  // Convert currentEpoch to days since 2000-01-01
   uint16_t todayDays = 0;
   if (currentEpoch > EPOCH_2000_OFFSET) {
     todayDays = static_cast<uint16_t>((currentEpoch - EPOCH_2000_OFFSET) / 86400);
@@ -164,41 +184,40 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   uint16_t windowStart = (todayDays > PAST_DAYS) ? todayDays - PAST_DAYS : 0;
   uint16_t windowEnd = todayDays + FUTURE_DAYS;
 
-  // Temporary buffer for merged events from all feeds
-  CalendarEvent tempEvents[MAX_EVENTS];
+  // Heap-allocate temp buffer to avoid stack overflow (3328 bytes is too large for task stack)
+  auto* tempEvents = static_cast<CalendarEvent*>(malloc(MAX_EVENTS * sizeof(CalendarEvent)));
+  if (!tempEvents) {
+    LOG_ERR("CAL", "malloc failed for tempEvents: %u bytes", MAX_EVENTS * sizeof(CalendarEvent));
+    disconnectWifi();
+    return SyncResult::FAILED;
+  }
+
   uint8_t tempCount = 0;
   bool anyModified = false;
   bool anyFailed = false;
 
   // Fetch each configured feed sequentially
   for (uint8_t i = 0; i < MAX_ICS_FEEDS; i++) {
-    const char* url = nullptr;
-    switch (i) {
-      case 0:
-        url = SETTINGS.calendarIcsUrl1;
-        break;
-      case 1:
-        url = SETTINGS.calendarIcsUrl2;
-        break;
-      case 2:
-        url = SETTINGS.calendarIcsUrl3;
-        break;
-    }
+    const char* url = getIcsUrl(i);
     if (!url || url[0] == '\0') continue;
 
     uint8_t maxForFeed = MAX_EVENTS - tempCount;
     if (maxForFeed == 0) break;
 
-    uint8_t addedCount = 0;  // Will be set by fetchAndParseFeed
-    bool modified = fetchAndParseFeed(url, data.feedMeta[i], tempEvents + tempCount, addedCount, maxForFeed, windowStart,
-                                      windowEnd);
-    if (modified) {
-      anyModified = true;
-      tempCount += addedCount;
-    } else if (addedCount == 0) {
-      // Feed returned 304 Not Modified or failed - no new events
-    } else {
-      anyFailed = true;
+    uint8_t addedCount = 0;
+    FeedResult result = fetchAndParseFeed(url, data.feedMeta[i], tempEvents + tempCount, addedCount, maxForFeed,
+                                          windowStart, windowEnd);
+    switch (result) {
+      case FeedResult::UPDATED:
+        anyModified = true;
+        tempCount += addedCount;
+        break;
+      case FeedResult::NOT_MODIFIED:
+        // Preserve existing events from this feed in the merge below
+        break;
+      case FeedResult::FAILED:
+        anyFailed = true;
+        break;
     }
   }
 
@@ -210,6 +229,9 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
     data.eventCount = tempCount > MAX_EVENTS ? MAX_EVENTS : tempCount;
     memcpy(data.events, tempEvents, data.eventCount * sizeof(CalendarEvent));
   }
+
+  free(tempEvents);
+  tempEvents = nullptr;
 
   // Update sync metadata
   data.lastSyncEpoch = currentEpoch;
@@ -227,14 +249,15 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   return anyModified ? SyncResult::OK_UPDATED : SyncResult::OK_NOT_MODIFIED;
 }
 
-bool CalendarSyncManager::fetchAndParseFeed(const char* url, FeedSyncMeta& meta, CalendarEvent* events,
-                                            uint8_t& eventCount, uint8_t maxEvents, uint16_t windowStart,
-                                            uint16_t windowEnd) {
+CalendarSyncManager::FeedResult CalendarSyncManager::fetchAndParseFeed(const char* url, FeedSyncMeta& meta,
+                                                                       CalendarEvent* events, uint8_t& eventCount,
+                                                                       uint8_t maxEvents, uint16_t windowStart,
+                                                                       uint16_t windowEnd) {
   // Validate URL: only allow http:// and https:// schemes
   if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) {
     LOG_ERR("CAL", "Invalid URL scheme (must be http or https): %s", url);
     eventCount = 0;
-    return false;
+    return FeedResult::FAILED;
   }
 
   IcsParser parser;
@@ -243,6 +266,7 @@ bool CalendarSyncManager::fetchAndParseFeed(const char* url, FeedSyncMeta& meta,
   StreamContext ctx = {};
   ctx.parser = &parser;
   ctx.gotData = false;
+  ctx.lastModifiedEpoch = 0;
 
   esp_http_client_config_t config = {};
   config.url = url;
@@ -261,7 +285,7 @@ bool CalendarSyncManager::fetchAndParseFeed(const char* url, FeedSyncMeta& meta,
   if (!client) {
     LOG_ERR("CAL", "Failed to init HTTP client for %s", url);
     eventCount = 0;
-    return false;
+    return FeedResult::FAILED;
   }
 
   // Set conditional request headers
@@ -289,20 +313,19 @@ bool CalendarSyncManager::fetchAndParseFeed(const char* url, FeedSyncMeta& meta,
   if (err != ESP_OK) {
     LOG_ERR("CAL", "HTTP request failed: %s", esp_err_to_name(err));
     eventCount = 0;
-    return false;
+    return FeedResult::FAILED;
   }
 
   if (statusCode == 304) {
-    // Not Modified - data unchanged
     LOG_DBG("CAL", "Feed not modified (304): %s", url);
     eventCount = 0;
-    return false;
+    return FeedResult::NOT_MODIFIED;
   }
 
   if (statusCode != 200) {
     LOG_ERR("CAL", "HTTP %d for feed: %s", statusCode, url);
     eventCount = 0;
-    return false;
+    return FeedResult::FAILED;
   }
 
   // Update sync metadata with new ETag
@@ -311,9 +334,14 @@ bool CalendarSyncManager::fetchAndParseFeed(const char* url, FeedSyncMeta& meta,
     meta.etag[MAX_ETAG_LEN - 1] = '\0';
   }
 
+  // Update Last-Modified epoch
+  if (ctx.lastModifiedEpoch > 0) {
+    meta.lastModifiedEpoch = ctx.lastModifiedEpoch;
+  }
+
   eventCount = parser.end();
   LOG_DBG("CAL", "Parsed %u events from feed: %s", eventCount, url);
-  return true;
+  return FeedResult::UPDATED;
 }
 
 uint32_t CalendarSyncManager::getNextSyncInterval(uint8_t batteryPct, uint8_t consecutiveFailures) {

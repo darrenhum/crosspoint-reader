@@ -6,25 +6,25 @@
 namespace calendar {
 
 /// Maximum number of .ics feed URLs supported
-static constexpr uint8_t MAX_ICS_FEEDS = 3;
+inline constexpr uint8_t MAX_ICS_FEEDS = 3;
 
 /// Maximum number of events stored across all feeds for the current display window
-static constexpr uint8_t MAX_EVENTS = 64;
+inline constexpr uint8_t MAX_EVENTS = 64;
 
 /// Maximum length for an event summary (null-terminated)
-static constexpr uint8_t MAX_SUMMARY_LEN = 48;
+inline constexpr uint8_t MAX_SUMMARY_LEN = 48;
 
 /// Maximum length for an ICS URL (null-terminated)
-static constexpr uint16_t MAX_ICS_URL_LEN = 256;
+inline constexpr uint16_t MAX_ICS_URL_LEN = 256;
 
 /// Maximum length for an ETag header value (null-terminated)
-static constexpr uint8_t MAX_ETAG_LEN = 64;
+inline constexpr uint8_t MAX_ETAG_LEN = 64;
 
 /// Display window: events from today minus this many days
-static constexpr uint8_t PAST_DAYS = 0;
+inline constexpr uint8_t PAST_DAYS = 0;
 
 /// Display window: events up to this many days in the future
-static constexpr uint8_t FUTURE_DAYS = 35;
+inline constexpr uint8_t FUTURE_DAYS = 35;
 
 /// Compact event representation for display
 struct CalendarEvent {
@@ -55,27 +55,27 @@ struct CalendarData {
 };
 
 /// Unix epoch offset for 2000-01-01 (946684800 seconds)
-static constexpr uint32_t EPOCH_2000_OFFSET = 946684800;
+inline constexpr uint32_t EPOCH_2000_OFFSET = 946684800;
+
+/// Count leap years from 2000 up to (but not including) the given year.
+inline int leapYearsBefore(int year) {
+  // Leap years between 2000 and year-1 inclusive
+  int y0 = 1999;  // one before 2000
+  int y1 = year - 1;
+  return (y1 / 4 - y0 / 4) - (y1 / 100 - y0 / 100) + (y1 / 400 - y0 / 400);
+}
 
 /// Convert a broken-down date (year, month 1-12, day 1-31) to days since 2000-01-01.
-/// Uses a sequential day-counting approach for clarity and correctness on embedded targets.
-/// Supports years 2000-2099 only (uint16_t range sufficient for ~36,500 days).
+/// O(1) arithmetic formula. Supports years 2000-2099.
 inline uint16_t dateToDays(int year, int month, int day) {
   static constexpr int daysBeforeMonth[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
   if (year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1) return 0;
 
-  int32_t days = 0;
-  // Count complete years from 2000
-  for (int y = 2000; y < year; y++) {
-    bool leap = (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0));
-    days += leap ? 366 : 365;
-  }
-  // Add days for complete months in this year
+  int32_t days = 365 * (year - 2000) + leapYearsBefore(year);
   days += daysBeforeMonth[month - 1];
   // Add leap day if past February in a leap year
   bool leapYear = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
   if (month > 2 && leapYear) days++;
-  // Add days in current month
   days += day - 1;
 
   return static_cast<uint16_t>(days > 0 ? days : 0);

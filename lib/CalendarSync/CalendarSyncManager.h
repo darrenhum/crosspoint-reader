@@ -56,15 +56,25 @@ class CalendarSyncManager {
   static bool isQuietHours(uint32_t epochTime);
 
  private:
-  /// Fetch a single ICS feed URL and parse events into the temporary buffer.
-  /// Returns true if data was modified (not a 304 response).
-  static bool fetchAndParseFeed(const char* url, FeedSyncMeta& meta, CalendarEvent* events, uint8_t& eventCount,
-                                uint8_t maxEvents, uint16_t windowStart, uint16_t windowEnd);
+  /// Result of fetching a single ICS feed
+  enum class FeedResult {
+    UPDATED,       ///< Feed returned 200, events parsed
+    NOT_MODIFIED,  ///< Feed returned 304, no changes
+    FAILED,        ///< HTTP error or invalid URL
+  };
+
+  /// Fetch a single ICS feed URL and parse events into the provided buffer.
+  static FeedResult fetchAndParseFeed(const char* url, FeedSyncMeta& meta, CalendarEvent* events, uint8_t& eventCount,
+                                      uint8_t maxEvents, uint16_t windowStart, uint16_t windowEnd);
+
+  /// Get the ICS URL for a given feed index (0-based). Returns nullptr if not configured.
+  static const char* getIcsUrl(uint8_t feedIndex);
 
   // Timeout constants (milliseconds)
   static constexpr int CONNECT_TIMEOUT_MS = 5000;
   static constexpr int TLS_TIMEOUT_MS = 5000;
   static constexpr int RECV_TIMEOUT_MS = 10000;
+  static constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;
 
   // Adaptive scheduling intervals (seconds)
   static constexpr uint32_t INTERVAL_HIGH_BATTERY = 6 * 3600;    ///< >50%: every 6 hours

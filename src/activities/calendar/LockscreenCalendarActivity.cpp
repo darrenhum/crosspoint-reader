@@ -35,6 +35,7 @@ void LockscreenCalendarActivity::onExit() {
     syncTaskHandle = nullptr;
   }
   syncInProgress = false;
+  syncComplete = false;
   Activity::onExit();
 }
 
@@ -58,6 +59,15 @@ void LockscreenCalendarActivity::initToday() {
 }
 
 void LockscreenCalendarActivity::loop() {
+  // Check if sync task completed - consume result on main task (thread-safe handoff)
+  if (syncComplete) {
+    calendarData = syncResultData;
+    syncComplete = false;
+    syncInProgress = false;
+    syncTaskHandle = nullptr;
+    requestUpdate();
+  }
+
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     finish();
     return;
@@ -101,18 +111,23 @@ void LockscreenCalendarActivity::loop() {
   });
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm) && !syncInProgress) {
-    // Manual sync trigger
+    // Manual sync trigger - run on separate task to avoid blocking UI
     syncInProgress = true;
+    syncComplete = false;
+    syncResultData = calendarData;  // Copy current data for sync task to update
     requestUpdate();
 
-    xTaskCreate(&syncTaskTrampoline, "CalSync", 4096, this, 1, &syncTaskHandle);
+    // Stack: IcsParser(~324B) + StreamContext(~72B) + locals(~200B) ≈ 600B
+    // tempEvents are heap-allocated in sync(). 8192 provides margin for HTTP/TLS stack frames.
+    xTaskCreate(&syncTaskTrampoline, "CalSync", 8192, this, 1, &syncTaskHandle);
   }
 }
 
 void LockscreenCalendarActivity::syncTaskTrampoline(void* param) {
   auto* self = static_cast<LockscreenCalendarActivity*>(param);
   self->syncTask();
-  self->syncTaskHandle = nullptr;
+  // Signal main task that sync is complete (main task will read syncResultData)
+  self->syncComplete = true;
   vTaskDelete(nullptr);
 }
 
@@ -123,7 +138,7 @@ void LockscreenCalendarActivity::syncTask() {
   time(&now);
   uint32_t currentEpoch = static_cast<uint32_t>(now);
 
-  auto result = calendar::CalendarSyncManager::sync(calendarData, batteryPct, currentEpoch);
+  auto result = calendar::CalendarSyncManager::sync(syncResultData, batteryPct, currentEpoch);
 
   switch (result) {
     case calendar::CalendarSyncManager::SyncResult::OK_UPDATED:
@@ -139,9 +154,6 @@ void LockscreenCalendarActivity::syncTask() {
       LOG_DBG("CAL", "Calendar sync skipped");
       break;
   }
-
-  syncInProgress = false;
-  requestUpdate();
 }
 
 void LockscreenCalendarActivity::goToPreviousMonth() {
@@ -273,6 +285,20 @@ void LockscreenCalendarActivity::drawCalendarGrid(int contentX, int contentY, in
   int dim = calendar::daysInMonth(displayYear, displayMonth);
   int gridY = sepY + 4;
 
+  // Precompute event-day flags for this month to avoid O(events) per cell
+  uint16_t monthStartDays = calendar::dateToDays(displayYear, displayMonth, 1);
+  uint64_t eventDayBits = 0;  // Bit i set => day (i+1) has an event
+  for (uint8_t ei = 0; ei < calendarData.eventCount; ei++) {
+    const auto& evt = calendarData.events[ei];
+    // Event spans [startDay, endDay). Intersect with this month's [monthStartDays, monthStartDays+dim).
+    int first = (evt.startDay > monthStartDays) ? static_cast<int>(evt.startDay - monthStartDays) : 0;
+    int last = (evt.endDay > monthStartDays) ? static_cast<int>(evt.endDay - monthStartDays) : 0;
+    if (last > dim) last = dim;
+    for (int d = first; d < last && d < 42; d++) {
+      eventDayBits |= (1ULL << d);
+    }
+  }
+
   for (int day = 1; day <= dim; day++) {
     int dayIndex = startCol + day - 1;
     int row = dayIndex / cols;
@@ -309,12 +335,10 @@ void LockscreenCalendarActivity::drawCalendarGrid(int contentX, int contentY, in
       renderer.drawText(UI_10_FONT_ID, textX, cellY + 1, dayStr, true);
     }
 
-    // Event dot indicator below the day number
-    uint16_t dayDays = calendar::dateToDays(displayYear, displayMonth, day);
-    if (dayHasEvent(dayDays)) {
+    // Event dot indicator below the day number (use precomputed bitset)
+    if (eventDayBits & (1ULL << (day - 1))) {
       int dotX = cellX + cellWidth / 2;
       int dotY = cellY + rowHeight - 4;
-      // Small filled circle as event indicator
       renderer.fillRect(dotX - 1, dotY - 1, 3, 3, !isToday);
     }
   }
@@ -347,14 +371,11 @@ void LockscreenCalendarActivity::drawEventList(int listX, int listY, int listWid
 
   for (int i = 0; i < eventCount && y + lineHeight < listY + listHeight; i++) {
     const auto* evt = dayEvents[i];
-    // Bullet point + truncated summary
-    static constexpr char BULLET_UTF8[] = "\xE2\x80\xA2";
+    // Bullet point + summary (stack buffer, no heap allocation)
     char eventLine[64];
-    snprintf(eventLine, sizeof(eventLine), "%s %s", BULLET_UTF8, evt->summary);
+    snprintf(eventLine, sizeof(eventLine), "\xE2\x80\xA2 %s", evt->summary);
 
-    // Truncate to fit width
-    std::string truncated = renderer.truncatedText(UI_10_FONT_ID, eventLine, listWidth);
-    renderer.drawText(UI_10_FONT_ID, listX, y, truncated.c_str(), true);
+    renderer.drawText(UI_10_FONT_ID, listX, y, eventLine, true);
     y += lineHeight + 2;
   }
 }
