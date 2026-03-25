@@ -176,7 +176,8 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
     return SyncResult::SKIPPED_NO_URLS;
   }
 
-  // Check schedule (adaptive interval + exponential backoff)
+  // Check schedule (adaptive interval + exponential backoff).
+  // Guard: currentEpoch >= lastSyncEpoch prevents unsigned wrap if clock drifts backward (NTP).
   if (data.lastSyncEpoch > 0 && currentEpoch > 0 && currentEpoch >= data.lastSyncEpoch) {
     uint32_t interval = getNextSyncInterval(batteryPct, data.consecutiveFailures);
     if (currentEpoch - data.lastSyncEpoch < interval) {
@@ -211,6 +212,8 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   auto* tempEvents = static_cast<CalendarEvent*>(malloc(tempEventsSize));
   if (!tempEvents) {
     LOG_ERR("CAL", "malloc failed for tempEvents: %u bytes", tempEventsSize);
+    data.consecutiveFailures++;
+    CalendarStore::save(data);
     disconnectWifi();
     return SyncResult::FAILED;
   }
