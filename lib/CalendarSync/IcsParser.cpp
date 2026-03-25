@@ -163,8 +163,7 @@ uint16_t IcsParser::parseDtValue(const char* value, size_t len) {
   return dateToDays(year, month, day);
 }
 
-bool IcsParser::startsWith(const char* str, size_t len, const char* prefix) {
-  size_t prefixLen = strlen(prefix);
+bool IcsParser::startsWith(const char* str, size_t len, const char* prefix, size_t prefixLen) {
   if (len < prefixLen) return false;
   return memcmp(str, prefix, prefixLen) == 0;
 }

@@ -71,15 +71,16 @@ void LockscreenCalendarActivity::initToday() {
 
 void LockscreenCalendarActivity::loop() {
   // Check if sync task completed - consume result on main task (thread-safe handoff).
-  // Acquire RenderLock so the render task cannot read calendarData during the swap.
+  // Acquire RenderLock so the render task cannot read calendarData/syncInProgress during the swap.
   if (syncComplete) {
     {
-      RenderLock lock;
+      RenderLock lock(*this);
       if (syncResultData) {
         calendarData = *syncResultData;
         free(syncResultData);
         syncResultData = nullptr;
       }
+      syncInProgress = false;
     }
     // Delete the suspended sync task (it suspended itself after setting syncComplete)
     if (syncTaskHandle) {
@@ -87,7 +88,6 @@ void LockscreenCalendarActivity::loop() {
       syncTaskHandle = nullptr;
     }
     syncComplete = false;
-    syncInProgress = false;
     requestUpdate();
   }
 
@@ -97,38 +97,50 @@ void LockscreenCalendarActivity::loop() {
   }
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Left)) {
-    goToPreviousMonth();
+    {
+      RenderLock lock(*this);
+      goToPreviousMonth();
+    }
     requestUpdate();
     return;
   }
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Right)) {
-    goToNextMonth();
+    {
+      RenderLock lock(*this);
+      goToNextMonth();
+    }
     requestUpdate();
     return;
   }
 
   buttonNavigator.onPreviousRelease([this] {
-    // Move selected day back by 7 (one week)
-    selectedDay -= 7;
-    if (selectedDay < 1) {
-      goToPreviousMonth();
-      int dim = calendar::daysInMonth(displayYear, displayMonth);
-      selectedDay = dim + selectedDay;  // selectedDay is negative offset
-      if (selectedDay < 1) selectedDay = 1;
+    {
+      RenderLock lock(*this);
+      // Move selected day back by 7 (one week)
+      selectedDay -= 7;
+      if (selectedDay < 1) {
+        goToPreviousMonth();
+        int dim = calendar::daysInMonth(displayYear, displayMonth);
+        selectedDay = dim + selectedDay;  // selectedDay is negative offset
+        if (selectedDay < 1) selectedDay = 1;
+      }
     }
     requestUpdate();
   });
 
   buttonNavigator.onNextRelease([this] {
-    // Move selected day forward by 7 (one week)
-    int dim = calendar::daysInMonth(displayYear, displayMonth);
-    selectedDay += 7;
-    if (selectedDay > dim) {
-      selectedDay = selectedDay - dim;
-      goToNextMonth();
-      dim = calendar::daysInMonth(displayYear, displayMonth);
-      if (selectedDay > dim) selectedDay = dim;
+    {
+      RenderLock lock(*this);
+      // Move selected day forward by 7 (one week)
+      int dim = calendar::daysInMonth(displayYear, displayMonth);
+      selectedDay += 7;
+      if (selectedDay > dim) {
+        selectedDay = selectedDay - dim;
+        goToNextMonth();
+        dim = calendar::daysInMonth(displayYear, displayMonth);
+        if (selectedDay > dim) selectedDay = dim;
+      }
     }
     requestUpdate();
   });
@@ -140,10 +152,12 @@ void LockscreenCalendarActivity::loop() {
       LOG_ERR("CAL", "malloc failed for sync buffer: %u bytes", sizeof(calendar::CalendarData));
       return;
     }
-    // Copy current data so sync task has feed metadata for conditional requests
-    *syncResultData = calendarData;
-
-    syncInProgress = true;
+    {
+      RenderLock lock(*this);
+      // Copy current data so sync task has feed metadata for conditional requests
+      *syncResultData = calendarData;
+      syncInProgress = true;
+    }
     syncComplete = false;
     requestUpdate();
 

@@ -177,7 +177,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   }
 
   // Check schedule (adaptive interval + exponential backoff)
-  if (data.lastSyncEpoch > 0 && currentEpoch > 0) {
+  if (data.lastSyncEpoch > 0 && currentEpoch > 0 && currentEpoch >= data.lastSyncEpoch) {
     uint32_t interval = getNextSyncInterval(batteryPct, data.consecutiveFailures);
     if (currentEpoch - data.lastSyncEpoch < interval) {
       return SyncResult::SKIPPED_SCHEDULE;

@@ -52,8 +52,8 @@ class LockscreenCalendarActivity final : public Activity {
 
   // Sync state - runs on a separate FreeRTOS task for non-blocking UI.
   // syncResultData is heap-allocated only during sync to avoid wasting ~3.5KB permanently.
-  volatile bool syncInProgress = false;
-  volatile bool syncComplete = false;
+  bool syncInProgress = false;           ///< Protected by RenderLock (read by render, written by loop)
+  volatile bool syncComplete = false;    ///< Set by sync task, polled by main task (must be volatile)
   TaskHandle_t syncTaskHandle = nullptr;
   calendar::CalendarData* syncResultData = nullptr;  ///< Heap-allocated, owned during sync only
   static void syncTaskTrampoline(void* param);

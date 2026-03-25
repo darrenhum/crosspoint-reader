@@ -91,7 +91,16 @@ class IcsParser {
   void processLine();
   void commitEvent();
   static uint16_t parseDtValue(const char* value, size_t len);
-  static bool startsWith(const char* str, size_t len, const char* prefix);
+
+  /// Check if str (of length len) starts with prefix of known length prefixLen.
+  /// Compile-time-friendly: avoids runtime strlen() when used with string literal wrapper.
+  static bool startsWith(const char* str, size_t len, const char* prefix, size_t prefixLen);
+
+  /// Convenience overload that deduces prefix length at compile time for string literals.
+  template <size_t N>
+  static bool startsWith(const char* str, size_t len, const char (&prefix)[N]) {
+    return startsWith(str, len, prefix, N - 1);
+  }
 };
 
 }  // namespace calendar
