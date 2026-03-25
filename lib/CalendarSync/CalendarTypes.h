@@ -59,9 +59,10 @@ static constexpr uint32_t EPOCH_2000_OFFSET = 946684800;
 
 /// Convert a broken-down date (year, month 1-12, day 1-31) to days since 2000-01-01.
 /// Uses a sequential day-counting approach for clarity and correctness on embedded targets.
+/// Supports years 2000-2099 only (uint16_t range sufficient for ~36,500 days).
 inline uint16_t dateToDays(int year, int month, int day) {
   static constexpr int daysBeforeMonth[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
-  if (month < 1 || month > 12 || day < 1) return 0;
+  if (year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1) return 0;
 
   int32_t days = 0;
   // Count complete years from 2000
@@ -80,13 +81,13 @@ inline uint16_t dateToDays(int year, int month, int day) {
   return static_cast<uint16_t>(days > 0 ? days : 0);
 }
 
-/// Convert days since 2000-01-01 back to year, month (1-12), day (1-31)
+/// Convert days since 2000-01-01 back to year, month (1-12), day (1-31).
+/// Capped at year 2099 to prevent infinite loops on extreme input values.
 inline void daysToDate(uint16_t totalDays, int& year, int& month, int& day) {
-  // Inverse of dateToDays, iterative approach for simplicity on embedded
   year = 2000;
   int32_t remaining = totalDays;
 
-  while (true) {
+  while (year < 2100) {
     bool leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
     int daysInYear = leap ? 366 : 365;
     if (remaining < daysInYear) break;

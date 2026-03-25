@@ -189,7 +189,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
     uint8_t maxForFeed = MAX_EVENTS - tempCount;
     if (maxForFeed == 0) break;
 
-    uint8_t addedCount = maxForFeed;
+    uint8_t addedCount = 0;  // Will be set by fetchAndParseFeed
     bool modified = fetchAndParseFeed(url, data.feedMeta[i], tempEvents + tempCount, addedCount, maxForFeed, windowStart,
                                       windowEnd);
     if (modified) {
@@ -230,6 +230,13 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
 bool CalendarSyncManager::fetchAndParseFeed(const char* url, FeedSyncMeta& meta, CalendarEvent* events,
                                             uint8_t& eventCount, uint8_t maxEvents, uint16_t windowStart,
                                             uint16_t windowEnd) {
+  // Validate URL: only allow http:// and https:// schemes
+  if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) {
+    LOG_ERR("CAL", "Invalid URL scheme (must be http or https): %s", url);
+    eventCount = 0;
+    return false;
+  }
+
   IcsParser parser;
   parser.begin(windowStart, windowEnd, events, maxEvents);
 
@@ -244,6 +251,8 @@ bool CalendarSyncManager::fetchAndParseFeed(const char* url, FeedSyncMeta& meta,
   config.timeout_ms = RECV_TIMEOUT_MS;
   config.buffer_size = STREAM_BUF_SIZE;
   config.buffer_size_tx = 256;
+  // CN check is skipped because ICS feeds may redirect through CDNs with different hostnames.
+  // Root CA validation is still performed via crt_bundle_attach.
   config.skip_cert_common_name_check = true;
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.keep_alive_enable = false;

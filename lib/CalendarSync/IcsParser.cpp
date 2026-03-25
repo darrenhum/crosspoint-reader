@@ -92,23 +92,26 @@ void IcsParser::processLine() {
       } else if (startsWith(lineBuf, lineLen, "DTSTART")) {
         // Find the colon after DTSTART (may have params like ;VALUE=DATE:)
         const char* colon = strchr(lineBuf, ':');
-        if (colon) {
-          size_t valLen = lineLen - (size_t)(colon + 1 - lineBuf);
+        if (colon && colon + 1 < lineBuf + lineLen) {
+          size_t offset = static_cast<size_t>(colon + 1 - lineBuf);
+          size_t valLen = lineLen - offset;
           currentStart = parseDtValue(colon + 1, valLen);
           hasStart = true;
         }
       } else if (startsWith(lineBuf, lineLen, "DTEND")) {
         const char* colon = strchr(lineBuf, ':');
-        if (colon) {
-          size_t valLen = lineLen - (size_t)(colon + 1 - lineBuf);
+        if (colon && colon + 1 < lineBuf + lineLen) {
+          size_t offset = static_cast<size_t>(colon + 1 - lineBuf);
+          size_t valLen = lineLen - offset;
           currentEnd = parseDtValue(colon + 1, valLen);
           hasEnd = true;
         }
       } else if (startsWith(lineBuf, lineLen, "SUMMARY")) {
         const char* colon = strchr(lineBuf, ':');
-        if (colon) {
+        if (colon && colon + 1 < lineBuf + lineLen) {
           const char* val = colon + 1;
-          size_t valLen = lineLen - (size_t)(val - lineBuf);
+          size_t offset = static_cast<size_t>(val - lineBuf);
+          size_t valLen = lineLen - offset;
           if (valLen >= MAX_SUMMARY_LEN) valLen = MAX_SUMMARY_LEN - 1;
           memcpy(currentSummary, val, valLen);
           currentSummary[valLen] = '\0';
@@ -148,9 +151,9 @@ uint16_t IcsParser::parseDtValue(const char* value, size_t len) {
   if (len < 8) return 0;
 
   // Parse YYYYMMDD
-  char yearBuf[5] = {};
-  char monthBuf[3] = {};
-  char dayBuf[3] = {};
+  char yearBuf[5] = {0};
+  char monthBuf[3] = {0};
+  char dayBuf[3] = {0};
 
   memcpy(yearBuf, value, 4);
   memcpy(monthBuf, value + 4, 2);
