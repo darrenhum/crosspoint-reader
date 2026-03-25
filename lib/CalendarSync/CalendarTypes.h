@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <cstring>
 
 namespace calendar {
 
@@ -43,26 +42,35 @@ struct FeedSyncMeta {
   FeedSyncMeta() : lastModifiedEpoch(0) { etag[0] = '\0'; }
 };
 
-/// All calendar data persisted to SD card
+/// All calendar data persisted to SD card.
+/// Members ordered widest-first after the large arrays to eliminate compiler padding.
 struct CalendarData {
   CalendarEvent events[MAX_EVENTS];
-  uint8_t eventCount;
   FeedSyncMeta feedMeta[MAX_ICS_FEEDS];
   uint32_t lastSyncEpoch;       ///< Epoch time of last successful sync
+  uint8_t eventCount;
   uint8_t consecutiveFailures;  ///< For exponential backoff
 
-  CalendarData() : eventCount(0), lastSyncEpoch(0), consecutiveFailures(0) { memset(feedMeta, 0, sizeof(feedMeta)); }
+  CalendarData() : lastSyncEpoch(0), eventCount(0), consecutiveFailures(0) {}
 };
 
 /// Unix epoch offset for 2000-01-01 (946684800 seconds)
 constexpr uint32_t EPOCH_2000_OFFSET = 946684800;
 
-/// Count leap years from 2000 up to (but not including) the given year.
-inline int leapYearsBefore(int year) {
-  // Leap years between 2000 and year-1 inclusive
-  int y0 = 1999;  // one before 2000
-  int y1 = year - 1;
-  return (y1 / 4 - y0 / 4) - (y1 / 100 - y0 / 100) + (y1 / 400 - y0 / 400);
+/// Shared days-per-month lookup (non-leap year). Used by multiple date functions.
+static constexpr int DAYS_IN_MONTH[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+/// Check if a year is a leap year
+inline bool isLeapYear(int year) {
+  return (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+}
+
+/// Get number of days in a given month (1-12) of a given year
+inline int daysInMonth(int year, int month) {
+  if (month < 1 || month > 12) return 30;
+  int days = DAYS_IN_MONTH[month - 1];
+  if (month == 2 && isLeapYear(year)) days = 29;
+  return days;
 }
 
 /// Convert a broken-down date (year, month 1-12, day 1-31) to days since 2000-01-01.
@@ -71,11 +79,15 @@ inline uint16_t dateToDays(int year, int month, int day) {
   static constexpr int daysBeforeMonth[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
   if (year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1) return 0;
 
-  int32_t days = 365 * (year - 2000) + leapYearsBefore(year);
+  // Count leap years from 2000 up to (but not including) the given year
+  int y0 = 1999;
+  int y1 = year - 1;
+  int leapYears = (y1 / 4 - y0 / 4) - (y1 / 100 - y0 / 100) + (y1 / 400 - y0 / 400);
+
+  int32_t days = 365 * (year - 2000) + leapYears;
   days += daysBeforeMonth[month - 1];
   // Add leap day if past February in a leap year
-  bool leapYear = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
-  if (month > 2 && leapYear) days++;
+  if (month > 2 && isLeapYear(year)) days++;
   days += day - 1;
 
   return static_cast<uint16_t>(days > 0 ? days : 0);
@@ -88,19 +100,16 @@ inline void daysToDate(uint16_t totalDays, int& year, int& month, int& day) {
   int32_t remaining = totalDays;
 
   while (year < 2100) {
-    bool leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
-    int daysInYear = leap ? 366 : 365;
+    int daysInYear = isLeapYear(year) ? 366 : 365;
     if (remaining < daysInYear) break;
     remaining -= daysInYear;
     year++;
   }
 
-  static constexpr int daysInMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-  bool leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
-
+  bool leap = isLeapYear(year);
   month = 1;
   for (int i = 0; i < 12; i++) {
-    int dim = daysInMonth[i];
+    int dim = DAYS_IN_MONTH[i];
     if (i == 1 && leap) dim = 29;
     if (remaining < dim) break;
     remaining -= dim;
@@ -116,17 +125,6 @@ inline int dayOfWeek(int year, int month, int day) {
   int y = year;
   if (month < 3) y--;
   return (y + y / 4 - y / 100 + y / 400 + t[month - 1] + day) % 7;
-}
-
-/// Get number of days in a given month (1-12) of a given year
-inline int daysInMonth(int year, int month) {
-  static constexpr int dim[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-  if (month < 1 || month > 12) return 30;
-  int days = dim[month - 1];
-  if (month == 2 && (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0))) {
-    days = 29;
-  }
-  return days;
 }
 
 }  // namespace calendar
