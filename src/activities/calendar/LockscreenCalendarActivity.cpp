@@ -56,7 +56,8 @@ void LockscreenCalendarActivity::initToday() {
   struct tm tmNow;
   localtime_r(&now, &tmNow);
 
-  if (tmNow.tm_year > 100) {  // Valid time (after 2000)
+  // tm_year is years since 1900; 100 corresponds to year 2000
+  if (tmNow.tm_year > 100) {
     todayYear = tmNow.tm_year + 1900;
     todayMonth = tmNow.tm_mon + 1;
     todayDay = tmNow.tm_mday;

@@ -54,7 +54,7 @@ void IcsParser::feed(const uint8_t* data, size_t len) {
     if (lineLen < LINE_BUF_SIZE - 1) {
       lineBuf[lineLen++] = c;
     }
-    // If line exceeds buffer, just stop accumulating (truncate)
+    // If line exceeds buffer, silently truncate (max lineLen stays at LINE_BUF_SIZE-1)
   }
 }
 
