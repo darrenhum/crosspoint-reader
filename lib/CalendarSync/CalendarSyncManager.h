@@ -35,9 +35,11 @@ class CalendarSyncManager {
    * @param data          Calendar data to update (read/write)
    * @param batteryPct    Current battery percentage (0-100)
    * @param currentEpoch  Current time as epoch seconds
+   * @param abortFlag     Optional pointer to volatile bool; checked between feeds for early exit
    * @return SyncResult indicating what happened
    */
-  static SyncResult sync(CalendarData& data, uint8_t batteryPct, uint32_t currentEpoch);
+  static SyncResult sync(CalendarData& data, uint8_t batteryPct, uint32_t currentEpoch,
+                          const volatile bool* abortFlag = nullptr);
 
   /**
    * Calculate the next sync interval in seconds based on battery level and failure count.

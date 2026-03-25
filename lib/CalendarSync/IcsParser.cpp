@@ -18,6 +18,7 @@ void IcsParser::begin(uint16_t windowStart, uint16_t windowEnd, CalendarEvent* o
   hasStart = false;
   hasEnd = false;
   currentSummary[0] = '\0';
+  currentSummaryLen = 0;
 }
 
 void IcsParser::feed(const uint8_t* data, size_t len) {
@@ -79,6 +80,7 @@ void IcsParser::processLine() {
         hasStart = false;
         hasEnd = false;
         currentSummary[0] = '\0';
+        currentSummaryLen = 0;
         currentStart = 0;
         currentEnd = 0;
       }
@@ -111,6 +113,7 @@ void IcsParser::processLine() {
           if (valLen >= MAX_SUMMARY_LEN) valLen = MAX_SUMMARY_LEN - 1;
           memcpy(currentSummary, val, valLen);
           currentSummary[valLen] = '\0';
+          currentSummaryLen = static_cast<uint8_t>(valLen);
         }
       }
       break;
@@ -134,11 +137,9 @@ void IcsParser::commitEvent() {
   CalendarEvent& evt = events[eventCount];
   evt.startDay = currentStart;
   evt.endDay = currentEnd;
-  // Copy only the actual summary content (+ null terminator) instead of the full buffer
-  size_t summaryLen = strlen(currentSummary);
-  if (summaryLen >= MAX_SUMMARY_LEN) summaryLen = MAX_SUMMARY_LEN - 1;
-  memcpy(evt.summary, currentSummary, summaryLen);
-  evt.summary[summaryLen] = '\0';
+  // Copy using tracked length (avoids strlen scan; max content length is MAX_SUMMARY_LEN-1)
+  memcpy(evt.summary, currentSummary, currentSummaryLen);
+  evt.summary[currentSummaryLen] = '\0';
   eventCount++;
 }
 

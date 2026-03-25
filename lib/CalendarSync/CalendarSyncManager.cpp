@@ -156,7 +156,8 @@ const char* CalendarSyncManager::getIcsUrl(uint8_t feedIndex) {
 }
 
 CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, uint8_t batteryPct,
-                                                          uint32_t currentEpoch) {
+                                                          uint32_t currentEpoch,
+                                                          const volatile bool* abortFlag) {
   // Check battery threshold
   if (batteryPct < BATTERY_SUSPEND_THRESHOLD) {
     LOG_DBG("CAL", "Sync skipped: battery %u%% below suspend threshold", batteryPct);
@@ -227,6 +228,14 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
 
   // First pass: fetch each configured feed with conditional headers
   for (uint8_t i = 0; i < MAX_ICS_FEEDS; i++) {
+    // Check abort flag between feeds for clean cancellation
+    if (abortFlag && *abortFlag) {
+      LOG_DBG("CAL", "Sync aborted by caller");
+      free(tempEvents);
+      disconnectWifi();
+      return SyncResult::FAILED;
+    }
+
     const char* url = getIcsUrl(i);
     if (!url || url[0] == '\0') continue;
 
@@ -256,6 +265,14 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   // is replaced with tempEvents.
   if (anyModified) {
     for (uint8_t i = 0; i < MAX_ICS_FEEDS; i++) {
+      // Check abort flag between feeds
+      if (abortFlag && *abortFlag) {
+        LOG_DBG("CAL", "Sync aborted by caller (pass 2)");
+        free(tempEvents);
+        disconnectWifi();
+        return SyncResult::FAILED;
+      }
+
       if (!feedNeedsRefetch[i]) continue;
       const char* url = getIcsUrl(i);
       if (!url || url[0] == '\0') continue;

@@ -35,8 +35,20 @@ void LockscreenCalendarActivity::onEnter() {
 }
 
 void LockscreenCalendarActivity::onExit() {
-  // Clean up sync task if still running
+  // Request sync task to abort cleanly (it checks this flag between feed fetches).
+  // This avoids vTaskDelete mid-HTTP which would leak the HTTP client handle + heap buffers.
   if (syncTaskHandle) {
+    syncAbortRequested = true;
+    // Wait for task to finish naturally. HTTP timeouts cap the worst case to ~15s per feed.
+    // In practice sync tasks are either between feeds (instant abort) or in a timed-out HTTP call.
+    constexpr int MAX_WAIT_MS = 20000;
+    constexpr int POLL_INTERVAL_MS = 50;
+    int waited = 0;
+    while (!syncComplete && waited < MAX_WAIT_MS) {
+      vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
+      waited += POLL_INTERVAL_MS;
+    }
+    // Delete the task (it suspended itself, or we timed out and must force-kill)
     vTaskDelete(syncTaskHandle);
     syncTaskHandle = nullptr;
   }
@@ -47,6 +59,7 @@ void LockscreenCalendarActivity::onExit() {
   }
   syncInProgress = false;
   syncComplete = false;
+  syncAbortRequested = false;
   Activity::onExit();
 }
 
@@ -160,6 +173,7 @@ void LockscreenCalendarActivity::loop() {
       syncInProgress = true;
     }
     syncComplete = false;
+    syncAbortRequested = false;
     requestUpdate();
 
     xTaskCreate(&syncTaskTrampoline, "CalSync", SYNC_TASK_STACK_SIZE, this, 1, &syncTaskHandle);
@@ -184,7 +198,7 @@ void LockscreenCalendarActivity::syncTask() {
   time(&now);
   uint32_t currentEpoch = static_cast<uint32_t>(now);
 
-  auto result = calendar::CalendarSyncManager::sync(*syncResultData, batteryPct, currentEpoch);
+  auto result = calendar::CalendarSyncManager::sync(*syncResultData, batteryPct, currentEpoch, &syncAbortRequested);
 
   switch (result) {
     case calendar::CalendarSyncManager::SyncResult::OK_UPDATED:

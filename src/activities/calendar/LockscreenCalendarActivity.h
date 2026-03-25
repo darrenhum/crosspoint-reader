@@ -54,6 +54,7 @@ class LockscreenCalendarActivity final : public Activity {
   // syncResultData is heap-allocated only during sync to avoid wasting ~3.5KB permanently.
   bool syncInProgress = false;           ///< Protected by RenderLock (read by render, written by loop)
   volatile bool syncComplete = false;    ///< Set by sync task, polled by main task (must be volatile)
+  volatile bool syncAbortRequested = false;  ///< Set by main task to request clean shutdown
   TaskHandle_t syncTaskHandle = nullptr;
   calendar::CalendarData* syncResultData = nullptr;  ///< Heap-allocated, owned during sync only
   static void syncTaskTrampoline(void* param);

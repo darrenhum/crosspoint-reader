@@ -104,13 +104,17 @@ bool CalendarStore::save(const CalendarData& data) {
   ok = ok && (file.write(&data.consecutiveFailures, sizeof(data.consecutiveFailures)) ==
               sizeof(data.consecutiveFailures));
 
-  file.close();
-
   if (!ok) {
+    // Close and remove the partially-written file
+    file.close();
     LOG_ERR("CAL", "Failed to write calendar data to file, removing corrupt file");
     Storage.remove(FILE_PATH);
     return false;
   }
+
+  // Flush to SD card before close to minimize data loss window on power failure
+  file.sync();
+  file.close();
 
   LOG_DBG("CAL", "Saved %u calendar events to file", count);
   return true;

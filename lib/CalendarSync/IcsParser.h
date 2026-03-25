@@ -78,6 +78,7 @@ class IcsParser {
   uint16_t currentStart = 0;
   uint16_t currentEnd = 0;
   char currentSummary[MAX_SUMMARY_LEN];
+  uint8_t currentSummaryLen = 0;  ///< Tracked length avoids strlen() in commitEvent
   bool hasStart = false;
   bool hasEnd = false;
 
