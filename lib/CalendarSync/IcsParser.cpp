@@ -99,7 +99,9 @@ void IcsParser::processLine() {
       } else if (startsWith(lineBuf, lineLen, "END:")) {
         if (nestedDepth > 0) nestedDepth--;
       } else if (nestedDepth == 0) {
-        // Only process VEVENT-level properties (not from nested VALARM etc.)
+        // Only process VEVENT-level properties. Nested components like VALARM
+        // can have their own SUMMARY and DTSTART which must not overwrite
+        // the parent VEVENT's values.
         if (startsWith(lineBuf, lineLen, "DTSTART")) {
           // Find the colon after DTSTART (may have params like ;VALUE=DATE:)
           const char* colon = strchr(lineBuf, ':');
