@@ -198,7 +198,9 @@ void LockscreenCalendarActivity::syncTask() {
   time(&now);
   uint32_t currentEpoch = static_cast<uint32_t>(now);
 
-  auto result = calendar::CalendarSyncManager::sync(*syncResultData, batteryPct, currentEpoch, &syncAbortRequested);
+  // forceSync=true: user-initiated manual sync bypasses schedule/battery/quiet-hours checks
+  auto result =
+      calendar::CalendarSyncManager::sync(*syncResultData, batteryPct, currentEpoch, &syncAbortRequested, true);
 
   switch (result) {
     case calendar::CalendarSyncManager::SyncResult::OK_UPDATED:

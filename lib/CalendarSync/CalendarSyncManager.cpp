@@ -157,14 +157,8 @@ const char* CalendarSyncManager::getIcsUrl(uint8_t feedIndex) {
 
 CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, uint8_t batteryPct,
                                                           uint32_t currentEpoch,
-                                                          const volatile bool* abortFlag) {
-  // Check battery threshold
-  if (batteryPct < BATTERY_SUSPEND_THRESHOLD) {
-    LOG_DBG("CAL", "Sync skipped: battery %u%% below suspend threshold", batteryPct);
-    return SyncResult::SKIPPED_BATTERY;
-  }
-
-  // Check if any ICS URLs are configured
+                                                          const volatile bool* abortFlag, bool forceSync) {
+  // Check if any ICS URLs are configured (always checked, even for manual sync)
   bool hasUrls = false;
   for (uint8_t i = 0; i < MAX_ICS_FEEDS; i++) {
     const char* url = getIcsUrl(i);
@@ -177,19 +171,28 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
     return SyncResult::SKIPPED_NO_URLS;
   }
 
-  // Check schedule (adaptive interval + exponential backoff).
-  // Guard: currentEpoch >= lastSyncEpoch prevents unsigned wrap if clock drifts backward (NTP).
-  if (data.lastSyncEpoch > 0 && currentEpoch > 0 && currentEpoch >= data.lastSyncEpoch) {
-    uint32_t interval = getNextSyncInterval(batteryPct, data.consecutiveFailures);
-    if (currentEpoch - data.lastSyncEpoch < interval) {
+  // Skip schedule/battery/quiet-hours checks when user manually triggers sync
+  if (!forceSync) {
+    // Check battery threshold
+    if (batteryPct < BATTERY_SUSPEND_THRESHOLD) {
+      LOG_DBG("CAL", "Sync skipped: battery %u%% below suspend threshold", batteryPct);
+      return SyncResult::SKIPPED_BATTERY;
+    }
+
+    // Check schedule (adaptive interval + exponential backoff).
+    // Guard: currentEpoch >= lastSyncEpoch prevents unsigned wrap if clock drifts backward (NTP).
+    if (data.lastSyncEpoch > 0 && currentEpoch > 0 && currentEpoch >= data.lastSyncEpoch) {
+      uint32_t interval = getNextSyncInterval(batteryPct, data.consecutiveFailures);
+      if (currentEpoch - data.lastSyncEpoch < interval) {
+        return SyncResult::SKIPPED_SCHEDULE;
+      }
+    }
+
+    // Check quiet hours
+    if (currentEpoch > 0 && isQuietHours(currentEpoch)) {
+      LOG_DBG("CAL", "Sync deferred: quiet hours");
       return SyncResult::SKIPPED_SCHEDULE;
     }
-  }
-
-  // Check quiet hours
-  if (currentEpoch > 0 && isQuietHours(currentEpoch)) {
-    LOG_DBG("CAL", "Sync deferred: quiet hours");
-    return SyncResult::SKIPPED_SCHEDULE;
   }
 
   // Connect WiFi
