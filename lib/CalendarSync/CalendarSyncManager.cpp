@@ -47,7 +47,7 @@ uint32_t parseHttpDate(const char* dateStr) {
   if (day < 1 || day > 31 || hour < 0 || hour > 23 || min < 0 || min > 59 || sec < 0 || sec > 59) return 0;
 
   static constexpr const char* months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+                                            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   int month = -1;
   for (int i = 0; i < 12; i++) {
     if (strcmp(monStr, months[i]) == 0) {

@@ -236,16 +236,6 @@ void LockscreenCalendarActivity::goToNextMonth() {
   if (selectedDay > dim) selectedDay = dim;
 }
 
-bool LockscreenCalendarActivity::dayHasEvent(uint16_t daysSince2000) const {
-  for (uint8_t i = 0; i < calendarData.eventCount; i++) {
-    const auto& evt = calendarData.events[i];
-    if (daysSince2000 >= evt.startDay && daysSince2000 < evt.endDay) {
-      return true;
-    }
-  }
-  return false;
-}
-
 int LockscreenCalendarActivity::getEventsForDay(uint16_t daysSince2000, const calendar::CalendarEvent** outEvents,
                                                  int maxOut) const {
   int count = 0;

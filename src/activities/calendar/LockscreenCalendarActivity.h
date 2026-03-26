@@ -65,9 +65,6 @@ class LockscreenCalendarActivity final : public Activity {
   void drawEventList(int listX, int listY, int listWidth, int listHeight) const;
   void drawLastRefreshedFooter(int footerX, int footerY, int footerWidth) const;
 
-  /// Check if a given day (days since 2000-01-01) has any events
-  bool dayHasEvent(uint16_t daysSince2000) const;
-
   /// Get number of events on a given day
   int getEventsForDay(uint16_t daysSince2000, const calendar::CalendarEvent** outEvents, int maxOut) const;
 
