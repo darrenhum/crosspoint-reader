@@ -39,9 +39,9 @@ void LockscreenCalendarActivity::onExit() {
   // This avoids vTaskDelete mid-HTTP which would leak the HTTP client handle + heap buffers.
   if (syncTaskHandle) {
     syncAbortRequested = true;
-    // Wait for task to finish naturally. HTTP timeouts cap the worst case to ~15s per feed.
+    // Wait for task to finish naturally. Worst case: WiFi connect (15s) + 3 × HTTP timeout (10s each) = 45s.
     // In practice sync tasks are either between feeds (instant abort) or in a timed-out HTTP call.
-    constexpr int MAX_WAIT_MS = 20000;
+    constexpr int MAX_WAIT_MS = 45000;
     constexpr int POLL_INTERVAL_MS = 50;
     int waited = 0;
     while (!syncComplete && waited < MAX_WAIT_MS) {

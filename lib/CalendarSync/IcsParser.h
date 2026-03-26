@@ -51,20 +51,10 @@ class IcsParser {
   enum class State {
     SCANNING,     ///< Looking for BEGIN:VEVENT
     IN_VEVENT,    ///< Inside a VEVENT block, scanning properties
-    IN_VALUE,     ///< Reading a property value
-    SKIP_LINE,    ///< Skip remaining chars until newline
-  };
-
-  enum class Property {
-    NONE,
-    DTSTART,
-    DTEND,
-    SUMMARY,
   };
 
   // Parse state
   State state = State::SCANNING;
-  Property currentProperty = Property::NONE;
 
   // Line buffer for accumulating key:value data.
   // ICS lines fold at 75 octets (RFC 5545 §3.1); 128 accommodates any unfolded
@@ -79,6 +69,7 @@ class IcsParser {
   uint16_t currentEnd = 0;
   char currentSummary[MAX_SUMMARY_LEN];
   uint8_t currentSummaryLen = 0;  ///< Tracked length avoids strlen() in commitEvent
+  uint8_t nestedDepth = 0;        ///< Nesting depth inside VEVENT (VALARM etc.)
   bool hasStart = false;
   bool hasEnd = false;
 

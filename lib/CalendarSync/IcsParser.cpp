@@ -12,13 +12,13 @@ void IcsParser::begin(uint16_t windowStart, uint16_t windowEnd, CalendarEvent* o
   this->eventCount = 0;
 
   state = State::SCANNING;
-  currentProperty = Property::NONE;
   lineLen = 0;
   pendingNewline = false;
   hasStart = false;
   hasEnd = false;
   currentSummary[0] = '\0';
   currentSummaryLen = 0;
+  nestedDepth = 0;
 }
 
 void IcsParser::feed(const uint8_t* data, size_t len) {
@@ -81,6 +81,7 @@ void IcsParser::processLine() {
         hasEnd = false;
         currentSummary[0] = '\0';
         currentSummaryLen = 0;
+        nestedDepth = 0;
         currentStart = 0;
         currentEnd = 0;
       }
@@ -90,30 +91,40 @@ void IcsParser::processLine() {
       if (startsWith(lineBuf, lineLen, "END:VEVENT")) {
         commitEvent();
         state = State::SCANNING;
-      } else if (startsWith(lineBuf, lineLen, "DTSTART")) {
-        // Find the colon after DTSTART (may have params like ;VALUE=DATE:)
-        const char* colon = strchr(lineBuf, ':');
-        if (colon && colon + 1 < lineBuf + lineLen) {
-          size_t valLen = lineLen - static_cast<size_t>(colon + 1 - lineBuf);
-          currentStart = parseDtValue(colon + 1, valLen);
-          hasStart = true;
-        }
-      } else if (startsWith(lineBuf, lineLen, "DTEND")) {
-        const char* colon = strchr(lineBuf, ':');
-        if (colon && colon + 1 < lineBuf + lineLen) {
-          size_t valLen = lineLen - static_cast<size_t>(colon + 1 - lineBuf);
-          currentEnd = parseDtValue(colon + 1, valLen);
-          hasEnd = true;
-        }
-      } else if (startsWith(lineBuf, lineLen, "SUMMARY")) {
-        const char* colon = strchr(lineBuf, ':');
-        if (colon && colon + 1 < lineBuf + lineLen) {
-          const char* val = colon + 1;
-          size_t valLen = lineLen - static_cast<size_t>(val - lineBuf);
-          if (valLen >= MAX_SUMMARY_LEN) valLen = MAX_SUMMARY_LEN - 1;
-          memcpy(currentSummary, val, valLen);
-          currentSummary[valLen] = '\0';
-          currentSummaryLen = static_cast<uint8_t>(valLen);
+        nestedDepth = 0;
+      } else if (startsWith(lineBuf, lineLen, "BEGIN:")) {
+        // Nested component (e.g., VALARM). Track depth so we don't confuse
+        // its SUMMARY/DTSTART with the parent VEVENT's properties.
+        nestedDepth++;
+      } else if (startsWith(lineBuf, lineLen, "END:")) {
+        if (nestedDepth > 0) nestedDepth--;
+      } else if (nestedDepth == 0) {
+        // Only process VEVENT-level properties (not from nested VALARM etc.)
+        if (startsWith(lineBuf, lineLen, "DTSTART")) {
+          // Find the colon after DTSTART (may have params like ;VALUE=DATE:)
+          const char* colon = strchr(lineBuf, ':');
+          if (colon && colon + 1 < lineBuf + lineLen) {
+            size_t valLen = lineLen - static_cast<size_t>(colon + 1 - lineBuf);
+            currentStart = parseDtValue(colon + 1, valLen);
+            hasStart = true;
+          }
+        } else if (startsWith(lineBuf, lineLen, "DTEND")) {
+          const char* colon = strchr(lineBuf, ':');
+          if (colon && colon + 1 < lineBuf + lineLen) {
+            size_t valLen = lineLen - static_cast<size_t>(colon + 1 - lineBuf);
+            currentEnd = parseDtValue(colon + 1, valLen);
+            hasEnd = true;
+          }
+        } else if (startsWith(lineBuf, lineLen, "SUMMARY")) {
+          const char* colon = strchr(lineBuf, ':');
+          if (colon && colon + 1 < lineBuf + lineLen) {
+            const char* val = colon + 1;
+            size_t valLen = lineLen - static_cast<size_t>(val - lineBuf);
+            if (valLen >= MAX_SUMMARY_LEN) valLen = MAX_SUMMARY_LEN - 1;
+            memcpy(currentSummary, val, valLen);
+            currentSummary[valLen] = '\0';
+            currentSummaryLen = static_cast<uint8_t>(valLen);
+          }
         }
       }
       break;

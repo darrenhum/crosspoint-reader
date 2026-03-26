@@ -263,6 +263,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   // the 304 feeds without conditional headers to get a consistent snapshot.
   // Without this, events from 304 feeds would be silently lost when data.events
   // is replaced with tempEvents.
+  bool refetchFailed = false;
   if (anyModified) {
     for (uint8_t i = 0; i < MAX_ICS_FEEDS; i++) {
       // Check abort flag between feeds
@@ -290,7 +291,11 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
         // Update the meta with new values from re-fetch
         data.feedMeta[i] = tempMeta;
       } else if (result == FeedResult::FAILED) {
+        // Re-fetch failed: we can't build a complete snapshot.
+        // Keep old data.events to avoid silently losing this feed's events.
+        refetchFailed = true;
         anyFailed = true;
+        break;
       }
     }
   }
@@ -298,7 +303,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
   // Power down WiFi as soon as possible
   disconnectWifi();
 
-  if (anyModified) {
+  if (anyModified && !refetchFailed) {
     // Replace events with newly fetched data (now includes all feeds)
     data.eventCount = tempCount > MAX_EVENTS ? MAX_EVENTS : tempCount;
     memcpy(data.events, tempEvents, data.eventCount * sizeof(CalendarEvent));
@@ -308,7 +313,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
 
   // Update sync metadata
   data.lastSyncEpoch = currentEpoch;
-  if (anyFailed && !anyModified) {
+  if (anyFailed) {
     data.consecutiveFailures++;
   } else {
     data.consecutiveFailures = 0;
@@ -316,7 +321,7 @@ CalendarSyncManager::SyncResult CalendarSyncManager::sync(CalendarData& data, ui
 
   CalendarStore::save(data);
 
-  if (anyFailed && !anyModified) {
+  if (refetchFailed || (anyFailed && !anyModified)) {
     return SyncResult::FAILED;
   }
   return anyModified ? SyncResult::OK_UPDATED : SyncResult::OK_NOT_MODIFIED;
